@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#26221C">
+<meta name="mobile-web-app-capable" content="yes">
+<title>My Contact</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: #FBF8F2; color: #26221C;
+    font-family: 'Avenir Next','Segoe UI',system-ui,-apple-system,sans-serif;
+  }
+  #app { max-width: 480px; margin: 0 auto; min-height: 100vh; position: relative; }
+  header { padding: 18px 16px 12px; }
+  h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.01em; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .textbtn { background: none; border: none; color: #3D5A80; font-weight: 700; font-size: 14px; padding: 6px; font-family: inherit; }
+  input, textarea {
+    width: 100%; padding: 14px; font-size: 16px; border: 1.5px solid #E6DFD2;
+    border-radius: 12px; background: #fff; color: #26221C; outline: none; font-family: inherit;
+  }
+  textarea { min-height: 88px; resize: vertical; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .chips.scroll { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; }
+  .chip { padding: 10px 16px; border-radius: 999px; border: 1.5px solid transparent; font-size: 15px; font-weight: 700; font-family: inherit; white-space: nowrap; }
+  .card {
+    width: 100%; display: flex; align-items: center; gap: 12px; background: #fff;
+    border: 1.5px solid #EFE9DD; border-radius: 16px; padding: 12px 14px; margin-bottom: 10px;
+    font-family: inherit; text-align: left;
+  }
+  .avatar {
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-weight: 700; flex-shrink: 0; letter-spacing: 0.02em; overflow: hidden;
+  }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .tag { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; flex-shrink: 0; }
+  .label { display: block; font-size: 13px; font-weight: 700; color: #8A8375; margin: 14px 2px 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .label .hint { font-weight: 500; text-transform: none; letter-spacing: 0; }
+  .footer {
+    position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 100%; max-width: 480px; padding: 12px 16px 20px;
+    background: linear-gradient(transparent, #FBF8F2 30%); display: flex; gap: 10px;
+  }
+  .bigbtn {
+    flex: 1; padding: 16px; border-radius: 14px; border: none; color: #fff;
+    font-size: 17px; font-weight: 800; font-family: inherit;
+  }
+  .action {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    background: #fff; border: 1.5px solid #EFE9DD; border-radius: 14px;
+    padding: 15px 16px; margin-bottom: 10px; text-decoration: none; font-size: 15px; color: #26221C;
+  }
+  .banner { margin: 0 16px 8px; padding: 12px 14px; background: #F7EDDB; color: #7A5A17; border-radius: 12px; font-size: 13px; line-height: 1.4; }
+  #toast {
+    position: fixed; bottom: 92px; left: 50%; transform: translateX(-50%);
+    background: #26221C; color: #fff; padding: 10px 18px; border-radius: 999px;
+    font-size: 14px; font-weight: 600; z-index: 30; white-space: nowrap; display: none;
+  }
+  .overlay { position: fixed; inset: 0; background: rgba(38,34,28,0.45); display: flex; align-items: flex-end; justify-content: center; z-index: 20; }
+  .sheet { background: #FBF8F2; width: 100%; max-width: 480px; border-radius: 20px 20px 0 0; padding: 24px 20px 28px; }
+  .photo-wrap { position: relative; width: 76px; height: 76px; border-radius: 50%; overflow: hidden; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  .photo-wrap input, .picklabel input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 0; }
+  .picklabel { position: relative; display: inline-block; }
+  button { cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast"></div>
+<input type="file" id="importFile" accept=".csv,text/csv" style="display:none">
+<input type="file" id="faceFile" accept="image/*" capture="environment" style="display:none">
+
+<script>
+"use strict";
+// ---------------- Data ----------------
+const GROUPS = [
+  { name: "Church", color: "#6B4E9B", soft: "#ECE5F5" },
+  { name: "Family", color: "#C2503B", soft: "#F8E4E0" },
+  { name: "Contractor", color: "#3D5A80", soft: "#E2EAF2" },
+  { name: "Tenant", color: "#3E7A5E", soft: "#E1EFE7" },
+  { name: "Restaurant", color: "#B04A17", soft: "#F8E8DE" },
+  { name: "Friend", color: "#B07A1E", soft: "#F7EDDB" },
+];
+const gOf = n => GROUPS.find(g => g.name === n) || { name: n, color: "#4E6151", soft: "#E4ECE6" };
+const KEY = "my-contact:v1";
+
+let canStore = true;
+let people = [];
+try {
+  const raw = localStorage.getItem(KEY);
+  if (raw) people = JSON.parse(raw);
+} catch (e) { canStore = false; }
+
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(people)); }
+  catch (e) {
+    canStore = false;
+    toast("Can't save here — open this file in Chrome to keep your data");
+  }
+}
+
+// ---------------- State ----------------
+let view = "list", filter = "All", search = "";
+let form = null, editingId = null, selectedId = null, confirmDel = false;
+
+const esc = s => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const initials = n => n.trim().split(/\s+/).slice(0,2).map(w => (w[0]||"").toUpperCase()).join("");
+const fmtDate = iso => { try { return new Date(iso).toLocaleDateString("en-NZ",{day:"numeric",month:"short",year:"numeric"}); } catch(e){ return iso; } };
+const emptyForm = () => ({ name:"", phone:"", email:"", address:"", group: filter !== "All" ? filter : "Church", photo:"", photoData:"", notes:"", yearsNZ:"", profession:"", status:"", children:"", wife:"", nationality:"" });
+const STATUSES = ["PR", "Citizen", "Work Permit", "Visitor"];
+const NATIONALITIES = ["Indonesian", "Korean", "Malaysian", "Singaporean"];
+
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.style.display = "block";
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", 2200);
+}
+
+// ---------------- Photo resize ----------------
+function pickPhoto(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const max = 480, scale = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      form.photoData = c.toDataURL("image/jpeg", 0.72);
+      render();
+    };
+    img.onerror = () => toast("Couldn't read that photo — try another");
+    img.src = reader.result;
+  };
+  reader.onerror = () => toast("Couldn't read that photo — try another");
+  reader.readAsDataURL(file);
+}
+
+// ---------------- CSV export / import ----------------
+function exportCSV() {
+  const head = ["ID","Name","Phone","Email","Address","Group/Category","Years in NZ","Profession","Nationality","Status","Children","Wife","Notes","Date Added","Last Modified","PhotoData"];
+  const q = v => '"' + String(v ?? "").replace(/"/g,'""') + '"';
+  const rows = people.map(p => [p.id,p.name,p.phone,p.email,p.address,p.group,p.yearsNZ||"",p.profession||"",p.nationality||"",p.status||"",p.children||"",p.wife||"",p.notes,fmtDate(p.dateAdded),p.dateModified?fmtDate(p.dateModified):"",p.photoData||""].map(q).join(","));
+  const blob = new Blob([[head.map(q).join(","),...rows].join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "My contact.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast("Saved as My contact.csv — share it to Google Drive");
+}
+
+function parseCSV(text) {
+  const rows = []; let row = [], cell = "", inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"') { if (text[i+1] === '"') { cell += '"'; i++; } else inQ = false; }
+      else cell += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === ",") { row.push(cell); cell = ""; }
+    else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i+1] === "\n") i++;
+      row.push(cell); rows.push(row); row = []; cell = "";
+    } else cell += ch;
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(c => c.trim() !== ""));
+}
+
+function importCSV(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const rows = parseCSV(reader.result);
+    if (rows.length < 2) { toast("That file looks empty"); return; }
+    const head = rows[0].map(h => h.trim().toLowerCase());
+    const col = name => head.findIndex(h => h.startsWith(name));
+    const iName = col("name");
+    if (iName < 0) { toast("Couldn't find a Name column"); return; }
+    const iPhone = col("phone"), iEmail = col("email"), iAddr = col("address"),
+          iGroup = col("group"), iPhoto = col("photo ("), iNotes = col("notes"), iPD = col("photodata"),
+          iYears = col("years"), iProf = col("profession"), iStatus = col("status"),
+          iChild = col("children"), iWife = col("wife"), iNat = col("nationality");
+    let maxId = people.reduce((m,p) => Math.max(m,p.id), 0), added = 0;
+    for (const r of rows.slice(1)) {
+      const name = (r[iName]||"").trim();
+      if (!name) continue;
+      const dup = people.some(p => p.name.toLowerCase() === name.toLowerCase());
+      if (dup) continue;
+      people.push({
+        id: ++maxId, name,
+        phone: iPhone>=0 ? r[iPhone]||"" : "",
+        email: iEmail>=0 ? r[iEmail]||"" : "",
+        address: iAddr>=0 ? r[iAddr]||"" : "",
+        group: iGroup>=0 && GROUPS.some(g=>g.name===(r[iGroup]||"").trim()) ? r[iGroup].trim() : "Church",
+        photo: iPhoto>=0 && !/^\(photo/.test(r[iPhoto]||"") ? r[iPhoto]||"" : "",
+        photoData: iPD>=0 ? r[iPD]||"" : "",
+        yearsNZ: iYears>=0 ? r[iYears]||"" : "",
+        profession: iProf>=0 ? r[iProf]||"" : "",
+        status: iStatus>=0 ? r[iStatus]||"" : "",
+        children: iChild>=0 ? r[iChild]||"" : "",
+        wife: iWife>=0 ? r[iWife]||"" : "",
+        nationality: iNat>=0 ? r[iNat]||"" : "",
+        notes: iNotes>=0 ? r[iNotes]||"" : "",
+        dateAdded: new Date().toISOString(),
+      });
+      added++;
+    }
+    save(); render();
+    toast(added ? "Imported " + added + " people" : "No new people found (duplicates skipped)");
+  };
+  reader.readAsText(file);
+}
+document.getElementById("importFile").addEventListener("change", e => {
+  if (e.target.files[0]) importCSV(e.target.files[0]);
+  e.target.value = "";
+});
+
+// ---------------- Face search ----------------
+let faceReady = null;
+function loadFaceAPI() {
+  if (faceReady) return faceReady;
+  faceReady = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js";
+    s.onload = async () => {
+      try {
+        const base = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model";
+        await faceapi.nets.tinyFaceDetector.loadFromUri(base);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(base);
+        await faceapi.nets.faceRecognitionNet.loadFromUri(base);
+        resolve();
+      } catch (e) { faceReady = null; reject(e); }
+    };
+    s.onerror = () => { faceReady = null; reject(new Error("load failed")); };
+    document.head.appendChild(s);
+  });
+  return faceReady;
+}
+
+async function descriptorFromDataUrl(dataUrl) {
+  const img = new Image();
+  await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = dataUrl; });
+  const det = await faceapi
+    .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions())
+    .withFaceLandmarks().withFaceDescriptor();
+  return det ? Array.from(det.descriptor) : null;
+}
+
+const dist = (a, b) => Math.sqrt(a.reduce((s, v, i) => s + (v - b[i]) * (v - b[i]), 0));
+
+async function faceSearch(file) {
+  if (!file) return;
+  const withPhotos = people.filter(p => p.photoData);
+  if (!withPhotos.length) { toast("No saved photos to match against yet"); return; }
+  toast("Loading face search…");
+  try { await loadFaceAPI(); }
+  catch (e) { toast("Needs internet the first time — check connection"); return; }
+
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      toast("Looking at the face…");
+      const qDesc = await descriptorFromDataUrl(reader.result);
+      if (!qDesc) { toast("Couldn't see a face in that photo — try again closer"); return; }
+      toast("Comparing with your people…");
+      let best = null, bestD = Infinity;
+      for (const p of withPhotos) {
+        if (!p.faceDesc) {
+          const d = await descriptorFromDataUrl(p.photoData);
+          p.faceDesc = d || "none";
+          save();
+        }
+        if (!Array.isArray(p.faceDesc)) continue;
+        const d = dist(qDesc, p.faceDesc);
+        if (d < bestD) { bestD = d; best = p; }
+      }
+      if (best && bestD < 0.55) {
+        selectedId = best.id; view = "detail"; render();
+        toast("Found: " + best.name);
+      } else if (best && bestD < 0.68) {
+        selectedId = best.id; view = "detail"; render();
+        toast("Closest match (not certain): " + best.name);
+      } else {
+        toast("No match found among saved photos");
+      }
+    } catch (e) {
+      toast("Face search hit a problem — try again");
+    }
+  };
+  reader.readAsDataURL(file);
+}
+document.getElementById("faceFile").addEventListener("change", e => {
+  if (e.target.files[0]) faceSearch(e.target.files[0]);
+  e.target.value = "";
+});
+
+// ---------------- OCR (read details from an image) ----------------
+let ocrReady = null;
+function loadOCR() {
+  if (ocrReady) return ocrReady;
+  ocrReady = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+    s.onload = () => resolve();
+    s.onerror = () => { ocrReady = null; reject(new Error("load failed")); };
+    document.head.appendChild(s);
+  });
+  return ocrReady;
+}
+
+const UI_WORDS = /\b(call|message|video|email|mobile|work|home|recent|activity|contact|contacts|edit|save|back|search|phone|sms|add|delete)\b/i;
+
+function extractEmail(text) {
+  const FINAL = /\.(com|net|org|edu|gov|mil|info|biz|io|me|nz|au|sg|my|id|kr|cn|hk|tw|jp|uk|us|ca)$/i;
+  const m = text.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*/);
+  if (!m) return null;
+  let email = m[0];
+  // If it doesn't end in a real TLD yet, look ahead past OCR junk for ".com" / ".co" ".nz" fragments
+  let rest = text.slice(m.index + m[0].length, m.index + m[0].length + 80);
+  let guard = 0;
+  while (!FINAL.test(email) && guard++ < 3) {
+    const frag = rest.match(/\.\s*([A-Za-z]{2,10})\b/);
+    if (!frag) break;
+    email += "." + frag[1];
+    rest = rest.slice(frag.index + frag[0].length);
+  }
+  return email;
+}
+
+function parseContactText(text) {
+  const out = {};
+  const email = extractEmail(text);
+  if (email) out.email = email;
+
+  // Phone — don't span line breaks; prefer numbers that look NZ (starting 0 or +64)
+  const phones = (text.match(/(\+?\d[\d \t()-]{5,}\d)/g) || [])
+    .map(s => s.trim())
+    .filter(s => { const d = s.replace(/\D/g, ""); return d.length >= 7 && d.length <= 13; })
+    .sort((a, b) => (/^(0|\+?64)/.test(b.replace(/\D/g, "")) ? 1 : 0) - (/^(0|\+?64)/.test(a.replace(/\D/g, "")) ? 1 : 0));
+  if (phones.length) out.phone = phones[0].replace(/[()-]/g, " ").replace(/\s+/g, " ").trim();
+
+  const lines = text.split(/\n/).map(l => l.trim()).filter(Boolean);
+  const clean = s => s.replace(/[^\w\s,.'&/-]/g, "").replace(/\s+/g, " ").trim();
+
+  // Name — clean icon junk around it; skip sentence-like lines ending in "."
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    const cl = clean(raw).replace(/[._]+$/, "");
+    if (!cl || UI_WORDS.test(cl) || /\d/.test(cl) || cl.endsWith(".")) continue;
+    if (!/^[A-Za-z][A-Za-z' .&-]*$/.test(cl)) continue;
+    let words = cl.split(/\s+/).filter(w => !/^[a-z]+[A-Z]/.test(w));
+    if (cl !== raw) {
+      // Line had icon junk — strip short scraps clinging to the edges
+      while (words.length && words[0].length <= 2) words.shift();
+      while (words.length && words[words.length - 1].length <= 2) words.pop();
+    } else {
+      words = words.filter(w => w.length > 1);
+    }
+    if (words.length >= 2 && words.length <= 4 && words.join(" ").length <= 40) {
+      let name = words.join(" ");
+      const nxt = lines[i + 1];
+      if (nxt && /^[A-Za-z][A-Za-z' &-]*$/.test(nxt) && !UI_WORDS.test(nxt)
+          && nxt.split(/\s+/).length <= 3 && (name + " " + nxt).length <= 45) {
+        name += " " + nxt;
+      }
+      out.name = name;
+      break;
+    }
+  }
+
+  // Address — join continuation lines ("57D Wolverton Street," / "Avondale, Auckland 0600")
+  const addrRe = /\b(street|st|road|rd|avenue|ave|drive|dr|place|pl|way|crescent|cres|lane|ln|terrace|tce|highway|hwy)\b/i;
+  for (let i = 0; i < lines.length; i++) {
+    if (/\d/.test(lines[i]) && addrRe.test(lines[i])) {
+      let addr = clean(lines[i]);
+      let j = i + 1;
+      while (addr.endsWith(",") && j < lines.length) {
+        const cont = clean(lines[j]);
+        if (!cont || UI_WORDS.test(cont)) break;
+        addr += " " + cont;
+        j++;
+      }
+      out.address = addr.replace(/([a-z])(\d)/g, "$1 $2").replace(/,\s*$/, "");
+      break;
+    }
+  }
+
+  // Notes — take the line(s) after a "Notes" heading
+  const ni = lines.findIndex(l => /^notes\b/i.test(l));
+  if (ni >= 0) {
+    const noteLines = [];
+    for (let j = ni + 1; j < lines.length && noteLines.length < 3; j++) {
+      const l = clean(lines[j]);
+      if (!l || UI_WORDS.test(l)) break;
+      noteLines.push(l);
+    }
+    if (noteLines.length) out.notes = noteLines.join(" ");
+  }
+  return out;
+}
+
+async function ocrScan(file, applyFn) {
+  toast("Reading text from image… first time downloads the reader");
+  try { await loadOCR(); }
+  catch (e) { toast("Needs internet the first time — check connection"); return; }
+  try {
+    const worker = await Tesseract.createWorker("eng");
+    const { data } = await worker.recognize(file);
+    await worker.terminate();
+    const found = parseContactText(data.text || "");
+    if (!found.name && !found.phone && !found.email && !found.address && !found.notes) {
+      toast("Couldn't find contact details in that image");
+      return;
+    }
+    applyFn(found);
+  } catch (e) {
+    toast("Couldn't read that image — try a clearer one");
+  }
+}
+
+// ---------------- Rendering ----------------
+const app = document.getElementById("app");
+
+function avatarHTML(p, size) {
+  const g = gOf(p.group);
+  const src = p.photoData || (/^https?:\/\//i.test(p.photo||"") ? p.photo : null);
+  if (src) return '<div class="avatar" style="width:'+size+'px;height:'+size+'px;border:2px solid '+g.color+'"><img src="'+esc(src)+'" alt=""></div>';
+  return '<div class="avatar" style="width:'+size+'px;height:'+size+'px;background:'+g.soft+';color:'+g.color+';font-size:'+Math.round(size*0.38)+'px">'+esc(initials(p.name)||"?")+'</div>';
+}
+
+function render() {
+  confirmEl = null;
+  if (view === "add") renderForm();
+  else if (view === "detail") renderDetail();
+  else renderList();
+}
+
+function renderList() {
+  const q = search.trim().toLowerCase();
+  const shown = people
+    .filter(p => filter === "All" || p.group === filter)
+    .filter(p => !q || [p.name,p.phone,p.email,p.address,p.notes,p.profession,p.wife,p.status,p.nationality].some(f => (f||"").toLowerCase().includes(q)))
+    .sort((a,b) => a.name.localeCompare(b.name));
+  const counts = { All: people.length };
+  GROUPS.forEach(g => counts[g.name] = people.filter(p => p.group === g.name).length);
+
+  let h = '<header>';
+  h += '<div class="row"><h1>My Contact</h1><div>';
+  h += '<button class="textbtn" id="btnImport">Import</button>';
+  if (people.length) h += '<button class="textbtn" id="btnExport">Save to Drive (CSV)</button>';
+  h += '</div></div>';
+  if (!canStore) h += '<div class="banner" style="margin:8px 0 0">Saving is blocked in this viewer. Download this file and open it in Chrome — then everything you add is kept.</div>';
+  h += '<div style="display:flex;gap:8px;margin-top:12px;align-items:stretch">'
+    + '<input id="search" placeholder="Search name, phone, notes…" value="'+esc(search)+'" style="margin-top:0;flex:1">'
+    + '<button id="btnFace" style="border:1.5px solid #E6DFD2;background:#fff;border-radius:12px;padding:6px 12px;font-family:inherit;display:flex;align-items:center" aria-label="Search by face">'
+    + '<img src="data:image/jpeg;base64,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" alt="Face search" style="width:34px;height:34px;border-radius:8px"></button></div>';
+  h += '<div class="chips scroll" id="filters">';
+  ["All"].concat(GROUPS.map(g=>g.name)).forEach(name => {
+    const on = filter === name;
+    const g = name === "All" ? { color:"#26221C", soft:"#F0EBE1" } : gOf(name);
+    h += '<button class="chip" data-f="'+name+'" style="background:'+(on?g.color:g.soft)+';color:'+(on?"#fff":g.color)+'">'+name+'</button>';
+  });
+  h += '</div></header><div style="padding:4px 16px 110px" id="list">';
+  if (!shown.length) {
+    h += '<div style="text-align:center;color:#8A8375;padding:56px 24px;font-size:15px;line-height:1.5">'
+      + (people.length ? "No one matches that search." : "No one here yet. Tap the big button below to add your first person.")
+      + '</div>';
+  }
+  shown.forEach(p => {
+    const g = gOf(p.group);
+    h += '<button class="card" data-id="'+p.id+'">'+avatarHTML(p,48)
+      + '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(p.name)+'</div>'
+      + '<div style="font-size:13px;color:#8A8375;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(p.phone||p.email||p.notes||"No details yet")+'</div></div>'
+      + '<span class="tag" style="background:'+g.soft+';color:'+g.color+'">'+p.group+'</span></button>';
+  });
+  h += '</div><div class="footer"><button class="bigbtn" id="btnAdd" style="background:#26221C;font-size:18px">＋ Add person</button></div>';
+  app.innerHTML = h;
+
+  const s = document.getElementById("search");
+  s.addEventListener("input", e => { search = e.target.value; renderListOnly(); });
+  document.getElementById("filters").addEventListener("click", e => {
+    const b = e.target.closest("[data-f]"); if (!b) return;
+    filter = b.dataset.f; render();
+  });
+  document.getElementById("list").addEventListener("click", e => {
+    const c = e.target.closest("[data-id]"); if (!c) return;
+    selectedId = +c.dataset.id; view = "detail"; render();
+  });
+  document.getElementById("btnAdd").addEventListener("click", () => { form = emptyForm(); editingId = null; view = "add"; render(); });
+  const ex = document.getElementById("btnExport");
+  if (ex) ex.addEventListener("click", exportCSV);
+  document.getElementById("btnImport").addEventListener("click", () => document.getElementById("importFile").click());
+  document.getElementById("btnFace").addEventListener("click", () => document.getElementById("faceFile").click());
+
+  function renderListOnly(){ render(); const s2 = document.getElementById("search"); s2.focus(); s2.setSelectionRange(s2.value.length, s2.value.length); }
+}
+
+function renderForm() {
+  const g = gOf(form.group);
+  const preview = form.photoData || (form.photoRemoved ? "" : (editingId ? (people.find(p=>p.id===editingId)||{}).photoData : "")) || "";
+  let h = '<header style="display:flex;align-items:center;gap:10px">'
+    + '<button class="textbtn" id="btnBack" style="font-size:16px">‹ Back</button>'
+    + '<h1 style="font-size:20px">'+(editingId?"Edit person":"Add a person")+'</h1></header>'
+    + '<div style="padding:8px 16px 120px">';
+
+  h += '<div style="display:flex;align-items:center;gap:14px;margin-top:4px">'
+    + '<div class="photo-wrap" style="border:2px dashed '+(preview?"transparent":g.color)+';background:'+(preview?"transparent":g.soft)+'">'
+    + (preview ? '<img src="'+preview+'" alt="" style="width:100%;height:100%;object-fit:cover">' : '<span style="font-size:26px">📷</span>')
+    + '<input type="file" accept="image/*" capture="environment" id="photoPick" aria-label="Take photo"></div>'
+    + '<div style="flex:1"><span class="picklabel" style="display:block"><span class="textbtn" style="display:block;padding:6px 0;text-align:left">Take photo</span>'
+    + '<input type="file" accept="image/*" capture="environment" id="photoPick3"></span>'
+    + '<span class="picklabel" style="display:block"><span class="textbtn" style="display:block;padding:6px 0;text-align:left">'+(preview?"Change from gallery":"Choose from gallery")+'</span>'
+    + '<input type="file" accept="image/*" id="photoPick2"></span>'
+    + (preview ? '<button class="textbtn" id="photoRemove" style="display:block;color:#B3402E;padding:6px 0">Remove photo</button>' : '')
+    + '</div>'
+    + '<span class="picklabel" style="align-self:flex-start"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAoJUlEQVR4nO2dd5xdVbX4v2vvfe6dmWQmjYSQCZBQQgIJhF6k9w6iNKlK8amgKCiIPhTBJ/jwB+rzPRUpoiCGRxWkRQhFaggloSSBJCQhvU+57Zy9fn/sc+7cSYGQucjv954rn5t759yzy1lr77VXv8LHgP3A/aJ1q8GVKGpt06SfJqKWGES0ZK24OMaKaKIqq7e1TrSESlOSaKIIzinEgMMSA5Bk9wK4rrYJCTYPiQvfJXm62ljECooF5wAXh6YWcEnox4J1QD7t0MXV69l71pYIwaDV79O52PTv6hxduC6CRE2mvVcv+8HMGSsX7nUxhY+D0zUQtTaYNHy7XRsb8p+LjNlPkK2ssU2qmlMAVRQQEVVVEVAEARTxkn2HeKkOKKIIeFERCX0ggFVFAEmRICoiihoFp6oWEVQxCqKCKGJUVbwYq4rxqFUxBlWHYD1ifWhnFIm8YlWwGhDvQCJVIi84RZwiDsSqigN1KjhUrAZi2DA3Y1EMIjY8q3NUVCiizElEn49jf9+ySaueGH0l5R4R4JXho7dvybsr8i53dIO1+UQhVlABBe3eXElRl2KUKpIAFUFEQEW7bgjIDtQyiJj0ewMIigkEwII3HjGKgor4lEgKoirWo4EYgvVgVAPCFLEKzgtGVSxI5MEqmiIbh0jkwXmwqDjNCCPqQIwqTpGUAGJVMIS+DIKgYsBaxDlwEVQSTyXWFwolrm09duV9G0IAM2Wb7b/WbHM/anCub9krHtXwFFLTUlBJV2VKBAE86TWBQABBs9UeFn9KlRT5AhgkfUdEFQMYBaOoSfuR8Dfipdq3KGK9pvcK4rtWbEAg2IB0nA+IDMiGgGwhqu4OyHZBlH5fZVOhrYT5iDEgtkoITDZHE9hSLofEXqkk+of29vJlmx9fmLdeBLiFzRt2H9Hnhn75hi97FRLUh+WYLu+Aum5tMo4vqmhAo4qAF8SAVolk0rZpN1WeFHaGqICY0FaNdiHddhEDA4oXETQliGASxWggnPWBxVhVjIhkbZ1PCZAh1a9GANWaa2F3RKQ7KH2Z8LfJdoNJXxZEQKwJO9qkz2XUNOaF9oK+tapNTx9+/MpXP5QA48COHrH9jRvlG79YCpvdpxweVS94RZp7QT4vsdQs5bATArP3iQrSdYB5RY0ggqCqhM+ohn1S5f9GAuuhhkhWEE26iCAa9pdBwj5TFSMgfjVCeXBhHGxgXTgPJmU71dWfshanQkTYAdYHAtQc0JLtBCuI9VWkh13qsZJIFImSLEVMGbGObDF5RfJ5kVLFf7BqlR477NiVk9ZJgKnb7PDtvrn8T8ugqqpgECugXhjaKvlDD6Jxv71pGDKEpKZldXcIqOpq3db+3f2zIGjtbhK6by7p9hZa6dqvr3Gh25e6xney+n3dvl9tvuvsN3sOxRBTWvoS5YV3wqqnESmpWtGsjyinpr2o764qlg4YcWRh7hrdTRq+3a4bNTY9aa30SjQ9Z50VVZX8546j75fPITdo4Oqj/xNWA++V0sLHKM+6Gi1NRo0La1lUGxuNWdWZ3LnxkytOkyvxkG76cWBbGvI/anSmV4IqoqrOiFoj+a+dx0bfv/SfyF9PMEZo3OQwmna4m7jxIFQTURFUhEJJfT5nTp61R5/jq/cDbLf1mM80OHtIKZVmjAgGLw2nfI6B530JI2vsu3/CR0DUNIiWMb/BN+2F4kUlKHHGiuSb7CXjfkAOUgLkIndyo7FWNT3NRY0ZM5r+F3xl/TS1f8JaIde0ES0jb8C7jUlS+bAUq0YRu22/e7/dAMyTAwf2dmL3j2vl83ye3uefg21oqPOU9B/8+vQh17w10cBzSNSTCCSCRnmxUU6OBXBD+g7d1Fk7NNFU5vYes8VwmnbbpS4TWLWqg3ufnMyzb8xhyfI2TKq2KRo+Q1VxJjVLpBpbUOpSMbVLQJJugotmYmyNYpH1PWrLIew/dlMO2n1kqil9OtBryCm0L7kZWKiCkbKHqEF2+gEY154URjXgmk2mxqpHRo/C5nI9Hvil16fzrV+O5/XZK0kwGBuQ4KuivwYhLkO6dgmlCliBJDMTieDRqvBaSxBVxYqQZBYQCWR4ePIifvWX1zhhjzf4PxcdTUtL7x4/04ZA1NSKNI2h3DFfrHGUPJQSv9X+v+nd3zU39e6Tt0Zi9RpWn2rvkdv0mPV/sGAp5/30r8xYWsblIqjESFKqcgebasWqqSFDAvKDEtklh7tUCwet6mmBWXaxGCuZ4hmQ7xG8icjngkn1j0/PYFX7f/O7fz2RluZePX20jw0iguZGEHc+jheDV8U1ml5b7pbLO+Ol61GCuCQSRT0e9Ob7X2LaogKN+RxNOeFbJ+/K1kNauux0QMY3tMqCutO9m16WSggZp1GtYUipvtP1HJaHXpzJuOdmISI0NTbw4GsLOPeqcdz0ryfR/CkQoVffrbVthcGKQQWs8aI+5xw2UEiqj6ugvkeDVcoVHn15Fs45ynHMuQeO4FtnHFiXB1lfOHjPUUx85yamLS0RGaEhn+OBSQs59+q7+N33T/yHEyEBKmLwYrAoKpZcUyxhV1dNwLKG5r0h4BWKMdUlvM1m/XvY48eHyFl65auWQCqJp7EhxwOTFvDVa+6mo73zHzofL0JFDBUxxMZSEUHzoobMchc04EwR6OFwwT4SuIZgrf3oJnUGVSVRRVFyVvjMlv3wSYWGfI67X57HBT+9h0Lnx3Je9QgShDKWCo4Khlgs0BAsq6lxvX46V8rJzKeqxWn1nPaJ5+rzD+L8w0ZSLpdoyOf48wtz+c4vHyYuf6TTqi7gESriqGApY4kxrCypmMSm9nzJXFo14sWGQmrjp/r26VAicFQhUYjyea698CjOPGAEhWKZhlzErU9M58qbxpMkyUd31kNQJF356QujUc56YxPIMKa1mOvJYFqriyqJ/8drpSImzEFTc7EIxjp+cfGxnLrvFhTLMdY5brh/Mj/87WN4/8kSIUGo4LSslopaKuIoiRdH9RCQzFMl1ANfQcUNitOnsAEq5TJVuoth4uQZJKU2Nm0dzP+54FAMjzHu+fdxznHD/W/grOGKcw8JvsZPADIW5MWh4kETKdKIq3quxCDqUZHVPSofG6RKT0FT/fUfAYXOAs+/PoPHXprBxGkLmLWkQuQMXuCSG5/GWaF/n9609onYfvhGtPZrYP6KEs45fnbP60TWcvk5B/FJsEyPUFZHTiJVEjColCrikoTUfRh8uahUfbw9gy6LjXzCZ0BcqXDXY5P47YOv8eqsFZQSiJzDGiHxHu8BiSgmSseyAnOXF3hx5kpyzmJMWC02clzz35MwxnDZF+uvsyQYyuJQb42zwWjlsVn4U2qPAbJYi55Cl7Nx3at/yZLllCpxzWi1um/XZ1Xo16c3Tb0a1+hj1uwFfPe/HuehSR/gjcNZh9EE8TGNkaF14xaipISiJCbPkrYCy9vLlLzgVVMCpMvFWX5858vkneGi0/dLjYL1AS9CKXUwe/XiEY0p48CiNWJQahPtMWiVjLIWGih3PjyJH9z0JIVKUiVAsJQqGRfMrKaqsNWQvvz60mMZMXxItZc33nmfM666l+lLyuRzEUk5oXfecMCOrRy/z0i2HT6IYUMHpXanYE2at3AJU2ct5r5npvLXibNZWojJR5Ys4sM4y4//9AJ7jR7C7juOqAMmAiRqKWsO1KaGRSGXj9VZMh6UmoBVtKfHpq7xf3eIy2Wuv+NJ3m+HhijC+6oSHmw9ErRpU9PLhKlL+MuEyVycEmDK1Pc55cq7mbUsIecscbnCsTsP5Tun7c2O223Ouvj48M02Yfhmm3D4vtvz5rQ5/OS2p7j/5bm4KApKowgdBc+MD5ax+449wUJ3SBBKODyRODyeGE8DplKNBzGaiaLaQ1VANFgou0zL3fuzUY4j9xpJnhgfVyCpoOmLpIKPKxgf1/wdM6x/I58ZuwUAK1e2ccH1DzNraUwuMhgSrjh1F/74o5PZcbthrO8hut2ITfn9D0/hh1/YCY0rVaJbY4h7Zg5bA7wGFlTGaUldYD40kFpDBdSkaPJ1UYprRf/VY3VFhMvPPYxD99iGpcvbunwl3eSvdD8oYAzbbtXKsNYQGHDtbRN44b0VNDVElEtlrjpzD755+gEbNE/rHBefdSg5Z/j+HybiowhxjjvGv8nnDxlLY2N9vIKxCCVC0GuCoCpYYlwWdaqi6bmZ0GMxSKr/hT/X0l0URey549Yfu+u3p8/ltiemkctFFMsJp+49jK+fvPeGzzWFC087iA+WdPLLv75NLor4+9QlPPj0FE48rD6ewQQoqhFBsCrEIiQlIyYBVC1KCPlV6mM4y5CeaaP1glsefIXlnQmqsFnfiCu+dCC2Dv4LEL59xn5ss3ETsfckYvjjo2+QxHEd+g5iaEmsdqqlgKGoRoqACRqBQbGquECIuohfikgacVgncW7FijYeeWU2zll8EnP6QSPZfOjGdekbYED/Ppx92HYkcULkDK/NXMZ7sxfWpe8EoaiWIpYijiJO47zVwIKyMGVSfl0HTcxnrsYPWf0rV6yiEid0l/1Dm169Gmls6i73vz5tLnOWFcA4mnPCMXuP7PE8V4dj99mO6+99jWUFZWlnwqvT5jNii9Ye95uoUApHPDEhltiXRBwQVn3AFl5Nj21BqoHtZEY5v1qHcRxz7S3j+fOEaZQrMdluyXy9CvRvaeKyL+zFcQfuUG339szFFGOPdZ7hrS2MGDa4ZxNdC2w+dCO23rgXf5/Rhld45c1ZnHx4z8+BRIQSTlArVgKuC3icNxFebJeomDlleghKupE8aygDb06dzTXjJuKjRpwIXgPyTWaGEmX2ynZ+dOsEDtlja5qamgBYWQpWziTxbN06YI0dUg8QY9l+xFCemT4FBAqa/+hG6wEJQkENGBuSf1Akn1cHORCL1yyVwqdSfA8eQiQNbwRkTbVu4IAWNh/UwvSFnag11TAVlarvnbhSYczwVnI1B+y7739QNQ9oqaMnU/xQaM4bUMUYy7JVHcFHLj2zkiYqFHGIWkLQtOJLibgEg8ehqQ9RJaqTS5Jq6P/qMGTwRtz5g8/y0tvzcS7qFhcEQYewVDhq71G4GgJISkxfZyVpDch8A8FVW5cuEwwlIrXqRFRDgEfehR3gg02umt/SFYGz4aApX1/X/EeP2JTRIzb9WH1utfkQeHY2RkByTT2e47pAXT7sYlX6t/Tq8eqH1BShRoxYtYqoV4lWJuISa1DJkWiad1UXr1hq3KtGwNVHDG2JFO89LnLMmL+MQmeh/ueAel6fNgdjDd4rDVIfn3GM0BlSN7Gpn4ScqPGZAiYOFac+yzqrA0i6heuliI0cPpDGyGDEMPWDlbw9Y35d+q2FxUtX8e78dpwNpsCdtxtel35jDB0YCqkiVvBWltMQFLFEHF4siVhRcXVgQbUIr4+fGWDsyE1p7deA90p7Be576q269FsLEya+y/tLCyhC/0bDjlvVR9FLEIpYOtVIIIKlCLiEHGocSbDgq5o0+66HUNvD2jjQW9M/4JnX38c4Wz2ws3tVQzDuYbtvQesmG1Xb9O3TzIE7bMpvHp9OLnKMe+Zdzv/sYoYOqU/2TqVc5rZH3wjxm3HC2BEbsWWddI3EI2VvNbJOY0VUPYLHJTYikQivadyxUBdThNcuMq7uWZq/cCmnXnkPUxd0VCOmMxeOSc3YSeI5cMIb3HPtGeTzXbL4GYfvwB1PTacMzF5e4qqbn+A33zuxLmzz1gde4qm3F+OiCI1jvnzsTjjnPrrheoBiNVZHxVsRERDVHAYDEV4iVBwJLoikPTZFZKmoITLNr3YGLF+xirlLVmEjh7MGaw3WukAMk2ZBG8vM+SuplLsbw3YeM5yT9h5OsVQh5xx/enYmvx73TA/nC0++8BY/uO05jHOUKwn7bjuIo/Yd3eN+M0gUqXgrFbVUsFSwUgCcNzkS4/CqeA1lHajDGSA10S2rH8Ijt96Mfz1tD+6cMJVSuYJICFM3VVVQ6d3UyAXH70Tv3quLm8J3z9qfZ99awPRFRZyNuPz3L2AMnH/ifhs02yeem8z5N4ynLTZEBqwV5izpZNKbs9h5zJYb1OcaIEYrOGJ1IhqcXrmyBjHUuxyxplc9If++LoNmylX3HWWM5aIzDuL8E/agUlm7ubehIU9+HSlSrZsM5OcXHszJP3qAjlhQ4/j2Tc8zY95KLj5tXwZu1He9plcqFbn5vhe56vYXaYsNzhiKcUJkDdMWdnDmNQ9x22VHs/OYLT7OU68VvBdJ1BGrQ1RQr+KLNhzCiYnw2UKVEMPSM8hSj7pMC2uDpl4bHiK+366j+O1FHVz4HxNYUvBEUcQvHnqbRya+z1mHbMux+27LsNaN1uIrUBYtWs6ESTO45eE3eOadRRgXYQ2Ieg4bszHPT1+CV8P7y8qccc1D/OGyo+pABKspAUyq7WqZHM5bQ2xdSAVSRaNcKP/RA6galyXLPfhk4NiDdmFg/z584+ePMnleO/lcxHtLS3zvjxP5+X2vMmrTAWw6sJnmPPRqjFi8osjSgmfKewuZu6KEF0M+F+GBuJJw+Sm7cPFpe3PrAy9wye+exxvHnOVFzrzmQe743rHssO2wDZ6rYkh8RILrCnqwDbgyOZw4vGgIDTLSYwJ0k/zlk42L23PHrXngpwO49ran+NPT77GilJDPOZaX4dnpS4nfWVQ9jzKt3FqDcY7ISFUEbnLKCfuNxEY5zvncvqjCpbe8QCKWOcvLnH3tQ9x86ZHsuO2GKWaqgk+sBKdXCEuJAecxQQwN9UoIVqKei3SZvUyVNaQggHK5zLOvTGfRkhWpU34d+yTjZVU+Jnjv2WaLIey47TAQYfCg/lx/yWc564iZ3PrXSTz+6hzmLS9SigmBZiYVbxVi71Ef44xQMQ6bmhyaezfSp7nrwD/38/tijeHim55DjWX6ok5O//GD3Pbdo9l59McngqrBa04T7yR4IcN1p7m8xuKC00QVFcHXQaY2VTPEmgRQVX78u0e57t4pqSMmQOY+6E6KrkNcSE3VHloaLL//zhEcvs+Y6p1jtxvODdsNZ8nS5Ux5dz6vTp3Pss6Et9+dQyVOaO7VwKitNmWjJths475857cTmLEsJnKGVZ1lnpn0HiccunO1vy+esDdxEvOdW18E45i5LLCj2y47ip1Hf8wzQQ2qVlEnqKBeoOhwJXViCKFCEJSw+viEgdTJYlfrzycxz02ZQyyOprzFp2Gp2SqtsUzjSYXizGGQhg0s7Szx4pTZ3QiQwUYD+rH/gH7sv/u22dPTRciuuQwa0MJpV9/HB22ekjFc+B9/wxrluIO7PGDnnbg/IFx664uoscxaWuJL1z7ErZcdzY4fw06kCCQ58bjUWSVIQwOmAsQS7EEV40IIdR1YULas1xYVYV3E10/ciy37Cs0U6GcL9LdF+poi/WrfbTFct0X6SoE+tkBfW6JFiuw5vJlTDh27npMRusLwu2DnMVtyx79+lqF9IkShPbH8y8/H88D4id3uO+/E/bjunD1xJFgjvLukyHk/e4S5C5auPzrUgDoStXiNUA3SmUuwJMbiNeXbdTBFaOrgzBC/NnP0MQeMZe+xw+kslNYqpn6IK6EmWLfnPoGdRm/B6Qdvy9V/fo3GvKMjcZx/w3iQIGVl8KUT9kGM8O2bnqcshslzVnLd7U9z/beOX78g3pQAqCWtwQbFPC5JE8ZUvfpUD66HHtA18Jq2oAz69etDv349HKoO0NSYr5rOjRE6fcSXb/gbgnDMQTVnwvF7s2JVkSv+NIkocvzttbm0t3euZ8qrSZEfzgDvhQpgKtaSiKVinMRYYjH4Hu4AQUF9tRZE8R+UCLeh0NFZDGeNCA0WUE+nd5x3/eNrsKOj996WRkmCMKCGSrKeQrZKtvrVq8V7Cz5Sk2CJTUB8YgxlY8T30BjnDPRtMmmhDeHFt+bR0+TvTwp8EvPyOwswIhQrCWcfMoojxw6mVInp1Ijzbvgb949/BQD1CXc8/hoFDSy7ySbk3Pqdl2n8rSTq8GpBIzBWnDeGmCB6qqJJOAN6RAEb5Th+n214ZvoLNDU28JdJ8/nWz+7nhAO2Y+CAPmkySDZEVzppdqnK/7MolTUepgtq760Nh5R13i+pv1pYuqyN2x55laffWUwushSLJUYP24jvn70/bVfcxRNTFmAix1d+OYHbx79FRynm71MX45yjs1jmqN1HrcVYuA5QAXWopoFwGgjnylicmBC+I0IiCUkd9IAzj9mdB1+cxVNvL6Yh5/jt+On8fsJ75CMXEEAofiiiJFlmSEaAGjE0IFer50jQXDXoC1Xsh1iiTONVVWzqWMiC85Qu3cQT0qbKcUyxkpCLIkqVhO1aWzh0jxH07t3E779/Amf/+B7Gv7EAxPHX1xeggLOWQrHMAaP6841T9llvfIQdEGJwwzwN+GZ1FWuppIFZHiQJO6HH0NLci5svP44LrnuI8W/MI1FDseIpVMpVqRwNVVOCshbaBcUsW8Ppu3ZFWEiaRdNl6qa6S7pFYUhXkpRkRMp67n4jxWKZMUOb+fk3DmNQakndqH8zt3zvs3z12vt5/PUPyNhyZDwn7jecn3zlMAb0b/kYGElXvRrRrEJtA7gKoYiEpv8S0/NDOIMhGw/gzqtP4bHn3uKxl6azaHkJTFRd6Zn3q1sMqaS5W9V0pe7Kmak6ela3dGfKXIpo7bL/VFlTupOyEgreJ/RpMuy745YcudcI+vfv023+A/u3cPuPTuKpidOZ/P5yctawy4hB7DF2yw3wwAlpYVOqxCgbcWUMkZhQs1khQXtsjKuFXD7H0QeM5egDxtatz38k5PJ5DvnMaA75TM/6CR5aA2o0NTdALhdYUGwd3ocQWm88yRrH3j+hp2CQgPhs9SOwqiwuMZYyJtOANTYY/XSrbPwPhcwOldVuBnJeXTFjQWmSQIxV/6kUF/ifDVWxOq39j7HhDPBYyqkP2AOJKP9vqkz/f0PqAksFM1MtR+CKQBScMAoQi9bBFrRuWLGijWcmvcdr7y3mnZnzcc6y3ZatbD98APvushVN6xnr2dlZ4MU3ZvHqu4uYMn0u5UqZ7bbenFGb9mP/Xbemb5/uFRJff2cOj740gygKcT6aKQkCWTGFAU2W/XbZks1aP4kyzZIqA5IFXwHhV1aIRVANXppEvNRLDK0Fn8T84cGX+eU9r/DOgg5iDUqNR/nz83NpdMLYYX255NQ903icdc1BeeCJ1/jZuJeYMnslHRWPsUG5uXviIvIWthr8HF87dkfOOnZ3TFqta9Jbc7n0d0/T2Jgny74HqgnihMr6DGp+ji8eNppLz9qfXB1Kd3bNutvH6sOZxBpiLImIxCrEYrWntqDVoVKpcMn193PhryYwdXEJNTbk5idlbFJBBBJjeXnWSs645mGu+I8HiePKWp5C+dltT3LWvz/GxPdXUcaERJCkgiRlhODbmL6wwNd//TRfv+4BCsUSANYamhoimvKOxlyEM6FttQqpCM45lhU8/zZuEt/7z4fxdS3klK766upPd0AFG3ZAOonYe6n3GfBvNz7Krx+dRr4hT6VcYexmfTh5/5G09mtARZgyayl/mjCND1Z6vLX8+32T6d+3Nxetlnz9m/9+liv/NBGMQ+OYLQY1ceoBI9lqcDOgfLCsyL1/n87EmctxUcTvxk+lIWf56TeOAoK2HXsY3Bxx+gGjsM6mtQqFts4i41+dy5vz2sjnI25+7G1OOWh7dh6z/l6vD4Owqrub6cnl1CVJkv40k9HMF1DPDfD8q+/yq4ffJsrl0DjhK4eP5PvnHESfmiq2nwe+eMwuXPSLx3j09XnkGvL87O5XOXi3rRk9YigA02bO4+rbg1vQJwmf32MzrvnqoQzZeEC38c797O5cc+sTXHfvG+Scoa2jQBz7agWt2CuD+jRw+ZcOwrjuLOZLsxdw2LfvZGF7TCERHn7urboRILhaUszW7ADjrcUjJBJeMVKH2NAA6j3/ec9LtJWVJPEcudMm/OSCI7ohP4PNhw7ipu8ex5jWZrxXlnTG/Oqu56tetV/f/SKLOxJQZdfhffnVJcetgXyAXr2auOprR/KTs3bllosP5TffO4lcLsKneU2a5isUS2tG5A3fbDBbDuyN94pXmDlnUV3w0IWQGsOIqlAui0mwJMEaKj6NV6lXHM/8xct5fuoi8pGlKYJvnbIXLlr3wda/XzMXn7gL+FAB5ekp82hvL7CqrYPxr84hFzmMer75+V1pbv4wM7DhojMO4XOH7FR93syampVHbWxYM7t+ytTZTF/UFuKGBFoHfwL1TmuRm2tRVyEJ5mAxqqqhkESdpKC33p3HohUFcDm2au3DDtt8dE7YnttvxoBeEctLyuK2Eu/Nnk/fvn1Y2pnggcG9LbuN3mwDZpOawI2wrKPCjfdOpCEfVQ16cxYuY9xT01jUHmOMIRLl4N232YBx1gVS854exKtWhZJlntR2rtRXCTP59GfnoNGUceuR/brxoAEM3bg/y2YtobNSYVV7kaUrCrQVymAcm/RvpqXXhlQwCRYAK8IHK4p888anu8zcgGKIXAiV7yiUOXnPTdlrx602YJwPAa15TyPBXfiVOkF9IEpM/TRhVR9eaQ7a+lg44jgmroS6x84IzkBTSy9yzlLyUCyViZMNK6BRa9ZWSe1fquRzoYqVqhIZOGqPoVx/0dF1S85IR8/eNIRHG2hsCP6AwIJUVEXXkti+wdArB86E0iwL2yosW9HOgNVs7qvDe+8vZMb85YgYBrQ0scWwIQhC75yhXFLmLiuwYGk7ffp8eD+VOGbyO7MZO2ozjHVZoAyxVwY0OfbdoS/GCgbD395czIqiJ0kSzjxoa66/+FioV4h+Blp9SeqeC0aJJEmlIAWPSj0P4W23bmWTfo0IMGtxJ/c8Ofkj29z2yBu0V5QkUUZs0szAfs3069PEloN7k3hlVVm5/ZHXPrKfvz3/NkdcOo5jLv4DL70xg5wL2nKSKEP7N3LTFSdz85Vn8rsrT+f8I7ajVAm8/8nJc1m6vL3nD78aBH9A6hNVqboAjSfBS6jqlyAkXd/1GPq29ObIXTenUomxkePaOyfyyuSZ67z/9r+8wC2Pv00ucqAJZx0+BuscuVyO0w7aFuKYXOT4r7++yV2PvLzOft6cPptLb5xAW2J5csp8CsUyxqQuSgmxquWammRnH70Lm/XLoQjTF3Zy0wMv1QcBq0NtJRoBEq9G1UuS+mRVIFFT43HtIYhw4Ul7sfmARrxXFnckfOHq+/mvcc8wb8FSip0FOtraeXv6B3z3F3/hot88TUUchVLMEWM3CWJkCqceuQufGTmAYjmmrJYLf/UkP77xUabPnEe5WESTmIULl/KHB17gpB/cy8wlJXyScNJnhrPfrttQqSRVo1tw7HdNc5ON+3P+EWPCQrGWmx55k/kL1z/scH3AGtNVDjKTglzkXTEpFnr5JC3Zq6hRae8s1W3gzVoHct35+3D2dY9S8I5FHQnfvul5rr9rIhv3a6JUqTB/RZmlnTFR5CiVY3Ya2sC/f+3QquUSoLGxgRsuPJyTfnA37y4tIznLNXe/zo0PT2b44BaaezUy7f1FzGuLUbFUKgm7bdGXa752WOpnJjVIZkbJ7vM84+hduGX8W8xcWmbO8hK/vuclrvzKEXXDw/yVbVKrAVOpKMtWJCYXuRkqWvCIJBj1CNNntdVtYICjDtiRW799GFsOyAcN1BjmdyiT5rTx5oISy0vBWZ5UKhy1w2DuvOpkhm22Zn7utiM25a6rPs/+I/tTLleIVVhShBdmrGT85AXMbYfYC5okHLHDIO744ecZPCgoU14hTkIh8SRJum8BYOCAvvzLUTtQLldQY7ll/Nt11YRfX94u1RUgFiqVBTz791WubfnK2VFj35W5XK7Rew/G8O7sMp2FMk2N9TPHHrX/juy87ebc+peJPDZpDtPmLg/Z+YnSKw87bDGYUw4cxQkHbk/0IWbgUVsN5b6fns64R1/jrqenMmXWYgpxiG1pbhC2H7YJJx84is8euANRrkvbbW50DB/YgIsiWvs3rjVe9QuH78T9f5/G3BVFksRzzxOv860zD+5xBd2VhRKT20upDCwaxC/3Hv95ZbsA5uCTn3ykobH5EJ9UNI1dl8u/Nox9dqtfPbZaiCsV3v9gCbGGSl3NDYbWDcp2V+bMXURHBVClpdExpCazvhaKxRKdnZ0ggjWWlpbea0VsZ0cnxVI5cGox9O3T3GMC3DF1Nqe/PB01RjEIuTxm+fLL/LlHX+sAX4oLj+VpOURDMK3GKvLnv85nt7EDqj8FVU9wUcSWwzapQ0/CputZtK+hIU9Dw0dXv2rq1VSXsPcMVhXL/PSduWmoT3oGFEslXyo8DGnySXtb+32lSmebGhN+rd2ik2eUueXuGdRPLftfCOq5/OWpvL6qnFkBhCgHcfwUE8a9CSkBXn3spHcLlcof1eaoSIhbV2e582+reODJefyTCBsA6vnxK9P51aylYG3g/eHwjSkVruWuuxKoqUmwrH3ZtR3ljvneRhIjJKJaUcPP7pjPL/70Hm3t9RNN/6fDvLYO/uWZt/j+2wsQ67okrlweOjtu4vzjnsju7Xa67HD8gyc19R10B8bYJDUViogUE2VEq+Nz+/Znv7H9GTywafWm/+vBJwkzVhW4a8YCfjtjEbNKSdC+04IlAfltr7Fk0SFcctqSrN0aWNz51Ccvc019fpLgSTQNCjYipTRWpX9v2HJInn69lKYmS7JaTz4NFQdqXJupbp2GIHSFlmsqGqfhkmSSWtfEMt2lGuAsNbHTUvuuXXOQLMo6m1c2jqTKaDY3rd5XnWuttSAzVctquQdCNcpQRFhSrLCg4pnSVmR57EMEcRZqoSoB+aveZ96cI/neOd2qTK11GY85afx3bFPzvxHlbOxj9SKhopwIZRViT/rbuIpHJDVxqBfFixEkLQMrwfCqGdKywGC6zCK+JmQSNA2iTHFgkJCzEMKWaggkYkLdtSyeAKNp0FkaQi1dBAmfNRNCun6OtesaaVhUuJa1rxIdIS0yT83vUqQk0Sq1BBFDTdALQr4BCu2vMH/2WVx29pur43qdfGSb4x76XK5Pv+u0sXlY4isk6tWnlA/vJhCgZpX49JX9nV4L9m+k+pAqwRzuU8NgFQkZ8rI1bhSfjtf1K3/pfdV26WdDOi8NP0Qk2RJY7b5A2DBAShg1gsejJs3ykGxeKR6zOdUSpca42R2baey7iyAue+LSzaxafjnfOGnx2vD8oYx86FHjWpv6Dvgm+V5nS65pgBfwmoQQdiDJqhyL4o1kRXKrK8UTVnhNim5IFAkEEI9mv56SIaoLMWTZPCI+284iGdLCfdlWT5HrQ1ildl/ZtX1nGeFpidhQmzIQrmsuXbvQBMtRdY4ZxqoLJsNiOg9jww9HlwtekuQJLXRcx1ePefTDcLxeJ+mgo27foqll4DE213ioWrO9d7l+Ht/kjc0qrwSvWpYckbIcTUMgMzNwNmJXfFL2cF2mYpGuexBJWVTtNe2OANN1LevTZ+OtlRVl7bq36RYvJd37XBPxWnMoeLCmSBK34XUacek5KsUHuOCE51gPD+96EaAWBh9+08Bcy8BNi8WVmyfiGsUZpfo7NAmJyTxJCQkWawnGL5tdTaHW4dTN+ZQEubn2O+MlkZR/WaCmv2orQ9ouWUs/NZ9r2ie2ZnAL+JSBWiAbL/27GyazdsYL6is09ZqDsbO58PgFfEy3+v8FWAxndKpPmsIAAAAASUVORK5CYII=" alt="Scan details from image" style="width:52px;height:52px">'
+    + '<input type="file" accept="image/*" id="ocrPick"></span>'
+    + '</div>';
+
+  h += '<label class="label">Name</label><input id="f_name" placeholder="Full name" value="'+esc(form.name)+'">';
+  h += '<label class="label">Group</label><div class="chips" id="groupChips">';
+  GROUPS.forEach(gr => {
+    const on = form.group === gr.name;
+    h += '<button class="chip" data-g="'+gr.name+'" style="background:'+(on?gr.color:gr.soft)+';color:'+(on?"#fff":gr.color)+';border-color:'+(on?gr.color:"transparent")+'">'+gr.name+'</button>';
+  });
+  h += '</div>';
+  h += '<label class="label">Phone</label><input id="f_phone" type="tel" inputmode="tel" placeholder="021 …" value="'+esc(form.phone)+'">';
+  h += '<label class="label">Email</label><input id="f_email" type="email" inputmode="email" placeholder="name@example.com" value="'+esc(form.email)+'">';
+  h += '<label class="label">Address</label><input id="f_address" placeholder="Street, suburb" value="'+esc(form.address)+'">';
+  h += '<label class="label">Years in NZ</label><input id="f_yearsNZ" inputmode="numeric" placeholder="e.g. 12" value="'+esc(form.yearsNZ)+'">';
+  h += '<label class="label">Profession</label><input id="f_profession" placeholder="e.g. Nurse, Engineer" value="'+esc(form.profession)+'">';
+  h += '<label class="label">Nationality <span class="hint">(pick or type your own)</span></label>'
+    + '<input id="f_nationality" list="natList" placeholder="— Select or type —" value="'+esc(form.nationality)+'">'
+    + '<datalist id="natList">';
+  NATIONALITIES.forEach(n => { h += '<option value="'+n+'">'; });
+  h += '</datalist>';
+  h += '<label class="label">Status <span class="hint">(pick or type your own)</span></label>'
+    + '<input id="f_status" list="statusList" placeholder="— Select or type —" value="'+esc(form.status)+'">'
+    + '<datalist id="statusList">';
+  STATUSES.forEach(st => { h += '<option value="'+st+'">'; });
+  h += '</datalist>';
+  h += '<label class="label">No. of children</label><input id="f_children" inputmode="numeric" placeholder="e.g. 2" value="'+esc(form.children)+'">';
+  h += '<label class="label">Wife</label><input id="f_wife" placeholder="Name" value="'+esc(form.wife)+'">';
+  h += '<label class="label">Notes</label><textarea id="f_notes" placeholder="Anything worth remembering">'+esc(form.notes)+'</textarea>';
+  h += '</div><div class="footer"><button class="bigbtn" id="btnSave" style="background:'+g.color+'">'+(editingId?"Save changes":"Add to "+form.group)+'</button></div>';
+  app.innerHTML = h;
+
+  const grab = () => {
+    form.name = document.getElementById("f_name").value;
+    form.phone = document.getElementById("f_phone").value;
+    form.email = document.getElementById("f_email").value;
+    form.address = document.getElementById("f_address").value;
+    form.yearsNZ = document.getElementById("f_yearsNZ").value;
+    form.profession = document.getElementById("f_profession").value;
+    form.nationality = document.getElementById("f_nationality").value;
+    form.status = document.getElementById("f_status").value;
+    form.children = document.getElementById("f_children").value;
+    form.wife = document.getElementById("f_wife").value;
+    form.notes = document.getElementById("f_notes").value;
+  };
+  document.getElementById("btnBack").addEventListener("click", () => {
+    view = editingId ? "detail" : "list"; editingId = null; form = null; render();
+  });
+  document.getElementById("groupChips").addEventListener("click", e => {
+    const b = e.target.closest("[data-g]"); if (!b) return;
+    grab(); form.group = b.dataset.g; render();
+  });
+  ["photoPick","photoPick2","photoPick3"].forEach(id => {
+    document.getElementById(id).addEventListener("change", e => {
+      grab(); pickPhoto(e.target.files[0]); e.target.value = "";
+    });
+  });
+  const rm = document.getElementById("photoRemove");
+  if (rm) rm.addEventListener("click", () => { grab(); form.photoData = ""; form.photoRemoved = true; render(); });
+  document.getElementById("ocrPick").addEventListener("change", e => {
+    const file = e.target.files[0]; e.target.value = "";
+    if (!file) return;
+    grab();
+    ocrScan(file, found => {
+      const filled = [];
+      if (found.name && !form.name.trim()) { form.name = found.name; filled.push("name"); }
+      if (found.phone && !form.phone.trim()) { form.phone = found.phone; filled.push("phone"); }
+      if (found.email && !form.email.trim()) { form.email = found.email; filled.push("email"); }
+      if (found.address && !form.address.trim()) { form.address = found.address; filled.push("address"); }
+      if (found.notes && !form.notes.trim()) { form.notes = found.notes; filled.push("notes"); }
+      render();
+      toast(filled.length ? "Filled in: " + filled.join(", ") + " — please check" : "Details found were already filled in");
+    });
+  });
+  document.getElementById("btnSave").addEventListener("click", () => {
+    grab();
+    if (!form.name.trim()) { toast("Name is needed first"); return; }
+    if (editingId) {
+      const p = people.find(x => x.id === editingId);
+      Object.assign(p, {
+        name: form.name, phone: form.phone, email: form.email, address: form.address,
+        group: form.group, notes: form.notes,
+        yearsNZ: form.yearsNZ, profession: form.profession, status: form.status,
+        children: form.children, wife: form.wife, nationality: form.nationality,
+      });
+      if (form.photoData) p.photoData = form.photoData;
+      else if (form.photoRemoved) p.photoData = "";
+      p.dateModified = new Date().toISOString();
+      save(); toast("Saved changes"); view = "detail";
+    } else {
+      const id = people.reduce((m,p) => Math.max(m,p.id), 0) + 1;
+      people.push({
+        id, name: form.name, phone: form.phone, email: form.email, address: form.address,
+        group: form.group, photo: "", photoData: form.photoData || "",
+        yearsNZ: form.yearsNZ, profession: form.profession, status: form.status,
+        children: form.children, wife: form.wife, nationality: form.nationality,
+        notes: form.notes, dateAdded: new Date().toISOString(), dateModified: new Date().toISOString(),
+      });
+      save(); toast("Added " + form.name.trim()); view = "list";
+    }
+    editingId = null; form = null; render();
+  });
+}
+
+let confirmEl = null;
+function renderDetail() {
+  const p = people.find(x => x.id === selectedId);
+  if (!p) { view = "list"; render(); return; }
+  const g = gOf(p.group);
+  const tel = (p.phone||"").replace(/\s/g,"");
+  let h = '<header style="display:flex;justify-content:space-between;align-items:center">'
+    + '<button class="textbtn" id="btnBack" style="font-size:16px">‹ All people</button>'
+    + '<button class="textbtn" id="btnDel" style="color:#B3402E;font-size:14px">Delete</button></header>';
+  h += '<div style="text-align:center;padding:8px 20px 4px"><div style="display:inline-block">'+avatarHTML(p,88)+'</div>'
+    + '<h2 style="margin:12px 0 4px;font-size:26px;font-weight:800">'+esc(p.name)+'</h2>'
+    + '<span class="tag" style="background:'+g.soft+';color:'+g.color+'">'+p.group+'</span>'
+    + '<div style="color:#8A8375;font-size:13px;margin-top:8px">Added '+fmtDate(p.dateAdded)+' · #'+p.id
+    + (p.dateModified ? ' · Updated '+fmtDate(p.dateModified) : '') + '</div></div>';
+  h += '<div style="padding:8px 16px 120px">';
+  const dim = v => v ? '<span style="text-align:right">'+esc(v)+'</span>' : '<span style="color:#C9C2B4">—</span>';
+  if (p.phone) {
+    h += '<div class="action"><span style="font-weight:700;color:'+g.color+'">Phone</span>'
+      + '<span style="display:flex;align-items:center;gap:8px">'
+      + '<span style="color:#26221C;font-weight:600">'+esc(p.phone)+'</span>'
+      + '<button id="btnCall" class="tag" style="background:'+g.soft+';border:none;padding:8px 14px;font-size:16px;font-family:inherit">📞</button>'
+      + '<button id="btnSms" class="tag" style="background:'+g.soft+';color:'+g.color+';border:none;padding:8px 14px;font-size:14px;font-family:inherit">SMS</button>'
+      + '</span></div>';
+  } else {
+    h += '<div class="action"><span style="font-weight:700;color:#8A8375">Phone</span>'+dim("")+'</div>';
+  }
+  if (p.email) h += '<a class="action" href="mailto:'+esc(p.email)+'"><span style="font-weight:700;color:'+g.color+'">Email</span><span>'+esc(p.email)+'</span></a>';
+  else h += '<div class="action"><span style="font-weight:700;color:#8A8375">Email</span>'+dim("")+'</div>';
+  if (p.address) {
+    h += '<a class="action" href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(p.address)+'" target="_blank" style="text-decoration:none">'
+      + '<span style="font-weight:700;color:'+g.color+'">Address</span>'
+      + '<span style="text-align:right;color:#26221C">'+esc(p.address)+' 📍</span></a>';
+  } else {
+    h += '<div class="action"><span style="font-weight:700;color:#8A8375">Address</span>'+dim("")+'</div>';
+  }
+  h += '<div class="action"><span style="font-weight:700;color:#8A8375">Wife</span>'
+    + (p.wife
+      ? '<span style="display:flex;align-items:center;gap:10px"><span>'+esc(p.wife)+'</span>'
+        + '<button id="btnSwap" class="tag" style="background:'+g.color+';color:#fff;border:none;padding:8px 14px;font-size:14px;font-family:inherit">⇄ Switch</button></span>'
+      : dim(""))
+    + '</div>';
+  h += '<div class="action"><span style="font-weight:700;color:#8A8375">Children</span>'+dim(p.children)+'</div>';
+  h += '<div class="action"><span style="font-weight:700;color:#8A8375">Profession</span>'+dim(p.profession)+'</div>';
+  h += '<div class="action"><span style="font-weight:700;color:#8A8375">Nationality</span>'+dim(p.nationality)+'</div>';
+  h += '<div class="action"><span style="font-weight:700;color:#8A8375">Years in NZ</span>'+dim(p.yearsNZ)+'</div>';
+  h += '<div class="action"><span style="font-weight:700;color:#8A8375">Status</span>'+dim(p.status)+'</div>';
+  h += '<div class="action" style="flex-direction:column;align-items:flex-start;gap:6px"><span style="font-weight:700;color:#8A8375">Notes</span>'
+    + (p.notes ? '<span style="white-space:pre-wrap">'+esc(p.notes)+'</span>' : '<span style="color:#C9C2B4">—</span>') + '</div>';
+  h += '</div><div class="footer">'
+    + '<button class="bigbtn" id="btnEdit" style="background:'+g.color+';flex:2">Edit</button>'
+    + '<button class="bigbtn" id="btnBack2" style="background:#F0EBE1;color:#26221C;flex:1">Back</button></div>';
+  app.innerHTML = h;
+
+  document.getElementById("btnBack").addEventListener("click", () => { view = "list"; selectedId = null; render(); });
+  document.getElementById("btnBack2").addEventListener("click", () => { view = "list"; selectedId = null; render(); });
+  const sw = document.getElementById("btnSwap");
+  if (sw) sw.addEventListener("click", () => {
+    const t = p.name; p.name = p.wife; p.wife = t;
+    p.dateModified = new Date().toISOString();
+    save(); render(); toast("Switched to " + p.name);
+  });
+  const call = document.getElementById("btnCall");
+  if (call) call.addEventListener("click", () => { window.location.href = "tel:" + tel; });
+  const sms = document.getElementById("btnSms");
+  if (sms) sms.addEventListener("click", () => { window.location.href = "sms:" + tel; });
+  document.getElementById("btnEdit").addEventListener("click", () => {
+    form = { name:p.name, phone:p.phone, email:p.email, address:p.address, group:p.group, photo:p.photo||"", notes:p.notes, photoData:"",
+             yearsNZ:p.yearsNZ||"", profession:p.profession||"", status:p.status||"", children:p.children||"", wife:p.wife||"", nationality:p.nationality||"" };
+    editingId = p.id; view = "add"; render();
+  });
+  document.getElementById("btnDel").addEventListener("click", () => {
+    const ov = document.createElement("div");
+    ov.className = "overlay";
+    ov.innerHTML = '<div class="sheet"><p style="margin:0 0 16px;font-weight:700;font-size:17px">Remove '+esc(p.name)+'?</p>'
+      + '<button class="bigbtn" id="yesDel" style="background:#B3402E;width:100%;margin-bottom:10px">Yes, remove</button>'
+      + '<button class="bigbtn" id="noDel" style="background:#F0EBE1;color:#26221C;width:100%">Keep</button></div>';
+    document.body.appendChild(ov);
+    ov.addEventListener("click", e => { if (e.target === ov) ov.remove(); });
+    ov.querySelector("#yesDel").addEventListener("click", () => {
+      people = people.filter(x => x.id !== p.id);
+      save(); ov.remove(); selectedId = null; view = "list"; render(); toast("Person removed");
+    });
+    ov.querySelector("#noDel").addEventListener("click", () => ov.remove());
+  });
+}
+
+render();
+</script>
+</body>
+</html>
