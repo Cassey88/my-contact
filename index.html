@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#26221C">
 <meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<script>
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+}
+</script>
 <title>My Contact</title>
 <style>
   * { box-sizing: border-box; margin: 0; }
@@ -108,7 +115,7 @@ let form = null, editingId = null, selectedId = null, confirmDel = false;
 const esc = s => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 const initials = n => n.trim().split(/\s+/).slice(0,2).map(w => (w[0]||"").toUpperCase()).join("");
 const fmtDate = iso => { try { return new Date(iso).toLocaleDateString("en-NZ",{day:"numeric",month:"short",year:"numeric"}); } catch(e){ return iso; } };
-const emptyForm = () => ({ name:"", phone:"", email:"", address:"", group: filter !== "All" ? filter : "Church", photo:"", photoData:"", notes:"", yearsNZ:"", profession:"", status:"", children:"", wife:"", nationality:"" });
+const emptyForm = () => ({ name:"", phone:"", email:"", address:"", group: filter !== "All" ? filter : "Church", photo:"", photoData:"", notes:"", yearsNZ:"", profession:"", status:"", children:"", childrenNames:"", wife:"", nationality:"" });
 const STATUSES = ["PR", "Citizen", "Work Permit", "Visitor"];
 const NATIONALITIES = ["Indonesian", "Korean", "Malaysian", "Singaporean"];
 
@@ -141,9 +148,9 @@ function pickPhoto(file) {
 
 // ---------------- CSV export / import ----------------
 function exportCSV() {
-  const head = ["ID","Name","Phone","Email","Address","Group/Category","Years in NZ","Profession","Nationality","Status","Children","Wife","Notes","Date Added","Last Modified","PhotoData"];
+  const head = ["ID","Name","Phone","Email","Address","Group/Category","Years in NZ","Profession","Nationality","Status","Children","Children Names","Wife","Notes","Date Added","Last Modified","PhotoData"];
   const q = v => '"' + String(v ?? "").replace(/"/g,'""') + '"';
-  const rows = people.map(p => [p.id,p.name,p.phone,p.email,p.address,p.group,p.yearsNZ||"",p.profession||"",p.nationality||"",p.status||"",p.children||"",p.wife||"",p.notes,fmtDate(p.dateAdded),p.dateModified?fmtDate(p.dateModified):"",p.photoData||""].map(q).join(","));
+  const rows = people.map(p => [p.id,p.name,p.phone,p.email,p.address,p.group,p.yearsNZ||"",p.profession||"",p.nationality||"",p.status||"",p.children||"",p.childrenNames||"",p.wife||"",p.notes,fmtDate(p.dateAdded),p.dateModified?fmtDate(p.dateModified):"",p.photoData||""].map(q).join(","));
   const blob = new Blob([[head.map(q).join(","),...rows].join("\n")], { type: "text/csv" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -183,7 +190,8 @@ function importCSV(file) {
     const iPhone = col("phone"), iEmail = col("email"), iAddr = col("address"),
           iGroup = col("group"), iPhoto = col("photo ("), iNotes = col("notes"), iPD = col("photodata"),
           iYears = col("years"), iProf = col("profession"), iStatus = col("status"),
-          iChild = col("children"), iWife = col("wife"), iNat = col("nationality");
+          iChild = col("children"), iWife = col("wife"), iNat = col("nationality"),
+          iChildN = col("children names");
     let maxId = people.reduce((m,p) => Math.max(m,p.id), 0), added = 0;
     for (const r of rows.slice(1)) {
       const name = (r[iName]||"").trim();
@@ -204,6 +212,7 @@ function importCSV(file) {
         children: iChild>=0 ? r[iChild]||"" : "",
         wife: iWife>=0 ? r[iWife]||"" : "",
         nationality: iNat>=0 ? r[iNat]||"" : "",
+        childrenNames: iChildN>=0 ? r[iChildN]||"" : "",
         notes: iNotes>=0 ? r[iNotes]||"" : "",
         dateAdded: new Date().toISOString(),
       });
@@ -530,7 +539,15 @@ function renderForm() {
   h += '</div>';
   h += '<label class="label">Phone</label><input id="f_phone" type="tel" inputmode="tel" placeholder="021 …" value="'+esc(form.phone)+'">';
   h += '<label class="label">Email</label><input id="f_email" type="email" inputmode="email" placeholder="name@example.com" value="'+esc(form.email)+'">';
-  h += '<label class="label">Address</label><input id="f_address" placeholder="Street, suburb" value="'+esc(form.address)+'">';
+  h += '<label class="label">Address</label>'
+    + '<div style="display:flex;gap:8px;align-items:stretch">'
+    + '<div style="position:relative;flex:1">'
+    + '<input id="f_address" placeholder="Street, suburb" value="'+esc(form.address)+'" style="width:100%;padding-right:44px">'
+    + '<button id="btnMap" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;background:none;font-size:20px;padding:6px" aria-label="Open in Google Maps">📍</button>'
+    + '</div>'
+    + '<button id="btnLocate" style="border:1.5px solid #E6DFD2;background:#fff;border-radius:12px;padding:4px 10px;font-family:inherit;display:flex;align-items:center" aria-label="Use current location">'
+    + '<img src="data:image/jpeg;base64,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" alt="Use current location" style="width:38px;height:38px;border-radius:8px"></button>'
+    + '</div>';
   h += '<label class="label">Years in NZ</label><input id="f_yearsNZ" inputmode="numeric" placeholder="e.g. 12" value="'+esc(form.yearsNZ)+'">';
   h += '<label class="label">Profession</label><input id="f_profession" placeholder="e.g. Nurse, Engineer" value="'+esc(form.profession)+'">';
   h += '<label class="label">Nationality <span class="hint">(pick or type your own)</span></label>'
@@ -543,7 +560,11 @@ function renderForm() {
     + '<datalist id="statusList">';
   STATUSES.forEach(st => { h += '<option value="'+st+'">'; });
   h += '</datalist>';
-  h += '<label class="label">No. of children</label><input id="f_children" inputmode="numeric" placeholder="e.g. 2" value="'+esc(form.children)+'">';
+  h += '<label class="label">Children <span class="hint">(number · names)</span></label>'
+    + '<div style="display:flex;gap:8px">'
+    + '<input id="f_children" inputmode="numeric" placeholder="No." value="'+esc(form.children)+'" style="width:90px;flex:none">'
+    + '<input id="f_childrenNames" placeholder="Names" value="'+esc(form.childrenNames)+'" style="flex:1">'
+    + '</div>';
   h += '<label class="label">Wife</label><input id="f_wife" placeholder="Name" value="'+esc(form.wife)+'">';
   h += '<label class="label">Notes</label><textarea id="f_notes" placeholder="Anything worth remembering">'+esc(form.notes)+'</textarea>';
   h += '</div><div class="footer"><button class="bigbtn" id="btnSave" style="background:'+g.color+'">'+(editingId?"Save changes":"Add to "+form.group)+'</button></div>';
@@ -559,6 +580,7 @@ function renderForm() {
     form.nationality = document.getElementById("f_nationality").value;
     form.status = document.getElementById("f_status").value;
     form.children = document.getElementById("f_children").value;
+    form.childrenNames = document.getElementById("f_childrenNames").value;
     form.wife = document.getElementById("f_wife").value;
     form.notes = document.getElementById("f_notes").value;
   };
@@ -568,6 +590,38 @@ function renderForm() {
   document.getElementById("groupChips").addEventListener("click", e => {
     const b = e.target.closest("[data-g]"); if (!b) return;
     grab(); form.group = b.dataset.g; render();
+  });
+  document.getElementById("btnMap").addEventListener("click", () => {
+    const a = document.getElementById("f_address").value.trim();
+    if (!a) { toast("Type or fill in an address first"); return; }
+    window.open("https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(a), "_blank");
+  });
+  document.getElementById("btnLocate").addEventListener("click", () => {
+    if (!navigator.geolocation) { toast("Location isn't available in this browser"); return; }
+    toast("Finding your location…");
+    navigator.geolocation.getCurrentPosition(async pos => {
+      try {
+        const { latitude, longitude } = pos.coords;
+        const r = await fetch("https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat="
+          + latitude + "&lon=" + longitude + "&addressdetails=1");
+        const d = await r.json();
+        const a = d.address || {};
+        const parts = [
+          [a.house_number, a.road].filter(Boolean).join(" "),
+          a.suburb || a.neighbourhood || a.village || "",
+          [(a.city || a.town || ""), (a.postcode || "")].filter(Boolean).join(" "),
+        ].filter(Boolean);
+        const addr = parts.join(", ");
+        if (!addr) { toast("Couldn't work out the address here"); return; }
+        document.getElementById("f_address").value = addr;
+        form.address = addr;
+        toast("Address filled in — please check");
+      } catch (err) {
+        toast("Couldn't look up the address — check internet");
+      }
+    }, err => {
+      toast(err.code === 1 ? "Location permission needed — allow it in Chrome" : "Couldn't get your location");
+    }, { enableHighAccuracy: true, timeout: 10000 });
   });
   ["photoPick","photoPick2","photoPick3"].forEach(id => {
     document.getElementById(id).addEventListener("change", e => {
@@ -601,6 +655,7 @@ function renderForm() {
         group: form.group, notes: form.notes,
         yearsNZ: form.yearsNZ, profession: form.profession, status: form.status,
         children: form.children, wife: form.wife, nationality: form.nationality,
+        childrenNames: form.childrenNames,
       });
       if (form.photoData) p.photoData = form.photoData;
       else if (form.photoRemoved) p.photoData = "";
@@ -613,6 +668,7 @@ function renderForm() {
         group: form.group, photo: "", photoData: form.photoData || "",
         yearsNZ: form.yearsNZ, profession: form.profession, status: form.status,
         children: form.children, wife: form.wife, nationality: form.nationality,
+        childrenNames: form.childrenNames,
         notes: form.notes, dateAdded: new Date().toISOString(), dateModified: new Date().toISOString(),
       });
       save(); toast("Added " + form.name.trim()); view = "list";
@@ -662,7 +718,8 @@ function renderDetail() {
         + '<button id="btnSwap" class="tag" style="background:'+g.color+';color:#fff;border:none;padding:8px 14px;font-size:14px;font-family:inherit">⇄ Switch</button></span>'
       : dim(""))
     + '</div>';
-  h += '<div class="action"><span style="font-weight:700;color:#8A8375">Children</span>'+dim(p.children)+'</div>';
+  h += '<div class="action"><span style="font-weight:700;color:#8A8375">Children</span>'
+    + dim([p.children, p.childrenNames].filter(Boolean).join(" — ")) + '</div>';
   h += '<div class="action"><span style="font-weight:700;color:#8A8375">Profession</span>'+dim(p.profession)+'</div>';
   h += '<div class="action"><span style="font-weight:700;color:#8A8375">Nationality</span>'+dim(p.nationality)+'</div>';
   h += '<div class="action"><span style="font-weight:700;color:#8A8375">Years in NZ</span>'+dim(p.yearsNZ)+'</div>';
@@ -688,7 +745,7 @@ function renderDetail() {
   if (sms) sms.addEventListener("click", () => { window.location.href = "sms:" + tel; });
   document.getElementById("btnEdit").addEventListener("click", () => {
     form = { name:p.name, phone:p.phone, email:p.email, address:p.address, group:p.group, photo:p.photo||"", notes:p.notes, photoData:"",
-             yearsNZ:p.yearsNZ||"", profession:p.profession||"", status:p.status||"", children:p.children||"", wife:p.wife||"", nationality:p.nationality||"" };
+             yearsNZ:p.yearsNZ||"", profession:p.profession||"", status:p.status||"", children:p.children||"", childrenNames:p.childrenNames||"", wife:p.wife||"", nationality:p.nationality||"" };
     editingId = p.id; view = "add"; render();
   });
   document.getElementById("btnDel").addEventListener("click", () => {
