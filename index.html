@@ -152,7 +152,12 @@ function exportCSV() {
   const head = ["ID","Name","Phone","Email","Address","Group/Category","Years in NZ","Profession","Nationality","Status","Children","Children Names","Spouse","Spouse Type","Notes","Date Added","Last Modified","PhotoData"];
   const q = v => '"' + String(v ?? "").replace(/"/g,'""') + '"';
   const rows = people.map(p => [p.id,p.name,p.phone,p.email,p.address,p.group,p.yearsNZ||"",p.profession||"",p.nationality||"",p.status||"",p.children||"",p.childrenNames||"",p.wife||"",p.spouseType||"",p.notes,fmtDate(p.dateAdded),p.dateModified?fmtDate(p.dateModified):"",p.photoData||""].map(q).join(","));
-  const blob = new Blob([[head.map(q).join(","),...rows].join("\n")], { type: "text/csv" });
+  const csv = [head.map(q).join(","),...rows].join("\n");
+  if (window.Android && window.Android.saveFile) {
+    window.Android.saveFile("My contact.csv", "text/csv", csv);
+    return;
+  }
+  const blob = new Blob([csv], { type: "text/csv" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = "My contact.csv";
@@ -795,6 +800,13 @@ function renderDetail() {
     ov.querySelector("#noDel").addEventListener("click", () => ov.remove());
   });
 }
+
+// Android back button: step back inside the app before closing it
+window.appBack = function () {
+  if (view !== "list") { view = "list"; editingId = null; form = null; selectedId = null; render(); return true; }
+  if (filter !== "All" || search) { filter = "All"; search = ""; render(); return true; }
+  return false;
+};
 
 render();
 </script>
