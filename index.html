@@ -89,6 +89,7 @@ const GROUPS = [
   { name: "Tenant", color: "#3E7A5E", soft: "#E1EFE7" },
   { name: "Restaurant", color: "#B04A17", soft: "#F8E8DE" },
   { name: "Friend", color: "#B07A1E", soft: "#F7EDDB" },
+  { name: "Restaurant M'sia", color: "#1F7A8C", soft: "#E0EEF2" },
 ];
 const gOf = n => GROUPS.find(g => g.name === n) || { name: n, color: "#4E6151", soft: "#E4ECE6" };
 const KEY = "my-contact:v1";
@@ -192,12 +193,30 @@ function importCSV(file) {
           iYears = col("years"), iProf = col("profession"), iStatus = col("status"),
           iChild = col("children"), iWifeA = col("spouse"), iWifeB = col("wife"), iWife = iWifeA >= 0 ? iWifeA : iWifeB, iSpT = col("spouse type"), iNat = col("nationality"),
           iChildN = col("children names");
-    let maxId = people.reduce((m,p) => Math.max(m,p.id), 0), added = 0;
+    let maxId = people.reduce((m,p) => Math.max(m,p.id), 0), added = 0, updated = 0;
     for (const r of rows.slice(1)) {
       const name = (r[iName]||"").trim();
       if (!name) continue;
-      const dup = people.some(p => p.name.toLowerCase() === name.toLowerCase());
-      if (dup) continue;
+      const dup = people.find(p => p.name.toLowerCase() === name.toLowerCase());
+      if (dup) {
+        let touched = false;
+        const fill = (field, val) => { if (val && !dup[field]) { dup[field] = val; touched = true; } };
+        fill("phone", iPhone>=0 ? r[iPhone] : "");
+        fill("email", iEmail>=0 ? r[iEmail] : "");
+        fill("address", iAddr>=0 ? r[iAddr] : "");
+        fill("photoData", iPD>=0 ? r[iPD] : "");
+        fill("yearsNZ", iYears>=0 ? r[iYears] : "");
+        fill("profession", iProf>=0 ? r[iProf] : "");
+        fill("status", iStatus>=0 ? r[iStatus] : "");
+        fill("children", iChild>=0 ? r[iChild] : "");
+        fill("childrenNames", iChildN>=0 ? r[iChildN] : "");
+        fill("wife", iWife>=0 ? r[iWife] : "");
+        fill("spouseType", iSpT>=0 ? r[iSpT] : "");
+        fill("nationality", iNat>=0 ? r[iNat] : "");
+        fill("notes", iNotes>=0 ? r[iNotes] : "");
+        if (touched) { dup.faceDesc = null; dup.dateModified = new Date().toISOString(); updated++; }
+        continue;
+      }
       people.push({
         id: ++maxId, name,
         phone: iPhone>=0 ? r[iPhone]||"" : "",
@@ -220,7 +239,10 @@ function importCSV(file) {
       added++;
     }
     save(); render();
-    toast(added ? "Imported " + added + " people" : "No new people found (duplicates skipped)");
+    const bits = [];
+    if (added) bits.push("added " + added);
+    if (updated) bits.push("updated " + updated + " (photos/details filled in)");
+    toast(bits.length ? "Import: " + bits.join(", ") : "Nothing new to import");
   };
   reader.readAsText(file);
 }
