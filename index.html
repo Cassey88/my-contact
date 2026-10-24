@@ -785,7 +785,6 @@ function renderForm() {
   h += '</div>';
   h += '<label class="label">Phone</label><input id="f_phone" type="tel" inputmode="tel" placeholder="021 …" value="'+esc(form.phone)+'">';
   h += '<label class="label">Email</label><input id="f_email" type="email" inputmode="email" placeholder="name@example.com" value="'+esc(form.email)+'">';
-  h += '<label class="label">Website</label><input id="f_website" inputmode="url" placeholder="www.example.co.nz" value="'+esc(form.website)+'">';
   h += '<label class="label">Address</label>'
     + '<div style="display:flex;gap:8px;align-items:stretch">'
     + '<div style="position:relative;flex:1">'
@@ -822,6 +821,7 @@ function renderForm() {
   STATUSES.forEach(st => { h += '<option value="'+st+'">'; });
   h += '</datalist>';
   h += '<label class="label">Notes</label><textarea id="f_notes" placeholder="Anything worth remembering">'+esc(form.notes)+'</textarea>';
+  h += '<label class="label">Website</label><input id="f_website" inputmode="url" placeholder="www.example.co.nz" value="'+esc(form.website)+'">';
   h += '</div><div class="footer"><button class="bigbtn" id="btnSave" style="background:'+g.color+'">'+(editingId?"Save changes":"Add to "+form.group)+'</button></div>';
   app.innerHTML = h;
 
@@ -972,14 +972,6 @@ function renderDetail() {
   }
   if (p.email) h += '<a class="action" href="mailto:'+esc(p.email)+'"><span style="font-weight:700;color:'+g.color+'">Email</span><span>'+esc(p.email)+'</span></a>';
   else h += '<div class="action"><span style="font-weight:700;color:#8A8375">Email</span>'+dim("")+'</div>';
-  if (p.website) {
-    const wurl = /^https?:\/\//i.test(p.website) ? p.website : "https://" + p.website;
-    const wshow = p.website.replace(/^https?:\/\//i, "").replace(/\/$/, "");
-    h += '<a class="action" href="'+esc(wurl)+'" target="_blank" style="text-decoration:none"><span style="font-weight:700;color:'+g.color+'">Website</span>'
-      + '<span style="text-align:right;color:#26221C;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">'+esc(wshow)+' 🌐</span></a>';
-  } else {
-    h += '<div class="action"><span style="font-weight:700;color:#8A8375">Website</span>'+dim("")+'</div>';
-  }
   if (p.address) {
     h += '<a class="action" href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(p.address)+'" target="_blank" style="text-decoration:none">'
       + '<span style="font-weight:700;color:'+g.color+'">Address</span>'
@@ -1001,6 +993,14 @@ function renderDetail() {
   h += '<div class="action"><span style="font-weight:700;color:#8A8375">Status</span>'+dim(p.status)+'</div>';
   h += '<div class="action" style="flex-direction:column;align-items:flex-start;gap:6px"><span style="font-weight:700;color:#8A8375">Notes</span>'
     + (p.notes ? '<span style="white-space:pre-wrap">'+esc(p.notes)+'</span>' : '<span style="color:#C9C2B4">—</span>') + '</div>';
+  if (p.website) {
+    const wurl = /^https?:\/\//i.test(p.website) ? p.website : "https://" + p.website;
+    const wshow = p.website.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+    h += '<a class="action" href="'+esc(wurl)+'" target="_blank" style="text-decoration:none"><span style="font-weight:700;color:'+g.color+'">Website</span>'
+      + '<span style="text-align:right;color:#26221C;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">'+esc(wshow)+' 🌐</span></a>';
+  } else {
+    h += '<div class="action"><span style="font-weight:700;color:#8A8375">Website</span>'+dim("")+'</div>';
+  }
   h += '</div><div class="footer">'
     + '<button class="bigbtn" id="btnEdit" style="background:'+g.color+';flex:2">Edit</button>'
     + '<button class="bigbtn" id="btnBack2" style="background:#F0EBE1;color:#26221C;flex:1">Back</button></div>';
