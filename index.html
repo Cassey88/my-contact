@@ -66,8 +66,8 @@ if ("serviceWorker" in navigator && location.protocol === "https:") {
   .banner { margin: 0 16px 8px; padding: 12px 14px; background: #F7EDDB; color: #7A5A17; border-radius: 12px; font-size: 13px; line-height: 1.4; }
   #toast {
     position: fixed; bottom: 92px; left: 50%; transform: translateX(-50%);
-    background: #26221C; color: #fff; padding: 10px 18px; border-radius: 999px;
-    font-size: 14px; font-weight: 600; z-index: 30; white-space: nowrap; display: none;
+    background: #26221C; color: #fff; padding: 10px 18px; border-radius: 18px;
+    font-size: 14px; font-weight: 600; z-index: 30; white-space: normal; max-width: 88vw; text-align: center; display: none;
   }
   .overlay { position: fixed; inset: 0; background: rgba(38,34,28,0.45); display: flex; align-items: flex-end; justify-content: center; z-index: 20; }
   .sheet { background: #FBF8F2; width: 100%; max-width: 480px; border-radius: 20px 20px 0 0; padding: 24px 20px 28px; }
@@ -80,7 +80,7 @@ if ("serviceWorker" in navigator && location.protocol === "https:") {
 <body>
 <div id="app"></div>
 <div id="toast"></div>
-<input type="file" id="importFile" accept=".csv,text/csv" style="display:none">
+<input type="file" id="importFile" accept=".csv,text/csv,text/comma-separated-values,application/vnd.ms-excel,text/plain,application/octet-stream" style="display:none">
 <input type="file" id="faceFile" accept="image/*" capture="environment" style="display:none">
 
 <script>
@@ -105,11 +105,83 @@ try {
   if (raw) people = JSON.parse(raw);
 } catch (e) { canStore = false; }
 
+// Photos live in IndexedDB (hundreds of MB of room). localStorage holds only ~5 MB in total, which
+// roughly 100 photos overflow - and then NOTHING gets saved. If IndexedDB is unavailable we fall back
+// to keeping photos inside localStorage, exactly as before.
+let photoDB = null;
+const photoSaved = new Map();   // id -> photo string already written to IndexedDB
+
+function openPhotoDB() {
+  return new Promise(resolve => {
+    try {
+      const req = indexedDB.open("my-contact-photos", 1);
+      req.onupgradeneeded = () => req.result.createObjectStore("photos");
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+      req.onblocked = () => resolve(null);
+    } catch (e) { resolve(null); }
+  });
+}
+
+function idbReadAll() {
+  return new Promise(resolve => {
+    const out = {};
+    try {
+      const cur = photoDB.transaction("photos").objectStore("photos").openCursor();
+      cur.onsuccess = () => { const c = cur.result; if (c) { out[c.key] = c.value; c.continue(); } else resolve(out); };
+      cur.onerror = () => resolve(out);
+    } catch (e) { resolve(out); }
+  });
+}
+
+// Writes new/changed photos and removes deleted ones. Resolves true only once IndexedDB confirms.
+function idbSync() {
+  return new Promise(resolve => {
+    if (!photoDB) return resolve(false);
+    try {
+      const tx = photoDB.transaction("photos", "readwrite"), st = tx.objectStore("photos");
+      const wrote = [], removed = [], live = new Set();
+      for (const p of people) {
+        live.add(p.id);
+        if (p.photoData) {
+          if (photoSaved.get(p.id) !== p.photoData) { st.put(p.photoData, p.id); wrote.push([p.id, p.photoData]); }
+        } else if (photoSaved.has(p.id)) { st.delete(p.id); removed.push(p.id); }
+      }
+      for (const id of [...photoSaved.keys()]) if (!live.has(id)) { st.delete(id); removed.push(id); }
+      tx.oncomplete = () => {
+        wrote.forEach(([id, d]) => photoSaved.set(id, d));
+        removed.forEach(id => photoSaved.delete(id));
+        resolve(true);
+      };
+      tx.onerror = tx.onabort = () => resolve(false);
+    } catch (e) { resolve(false); }
+  });
+}
+
 function save() {
-  try { localStorage.setItem(KEY, JSON.stringify(people)); }
+  let ok = true;
+  const store = photoDB ? people.map(({ photoData, ...rest }) => rest) : people;
+  if (photoDB) idbSync().then(done => { if (!done) toast("Couldn't save the photos on this device"); });
+  try { localStorage.setItem(KEY, JSON.stringify(store)); }
   catch (e) {
-    canStore = false;
+    canStore = false; ok = false;
     toast("Can't save here — open this file in Chrome to keep your data");
+  }
+  return ok;
+}
+
+async function init() {
+  photoDB = await openPhotoDB();
+  if (!photoDB) return;
+  const stored = await idbReadAll();
+  let migrate = false;
+  for (const p of people) {
+    if (p.photoData) migrate = true;                 // old format: photo still inside localStorage
+    else if (stored[p.id]) { p.photoData = stored[p.id]; photoSaved.set(p.id, p.photoData); }
+  }
+  if (migrate) {                                      // copy to IndexedDB first, only then slim down localStorage
+    const done = await idbSync();
+    if (done) save(); else photoDB = null;            // couldn't write there: keep the old way, lose nothing
   }
 }
 
@@ -127,7 +199,7 @@ const NATIONALITIES = ["Indonesian", "Korean", "Malaysian", "Singaporean"];
 function toast(msg) {
   const t = document.getElementById("toast");
   t.textContent = msg; t.style.display = "block";
-  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", 2200);
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", Math.max(2200, msg.length * 55));
 }
 
 // ---------------- Photo resize ----------------
@@ -243,8 +315,11 @@ function exportCSV() {
   const q = v => '"' + String(v ?? "").replace(/"/g,'""') + '"';
   const rows = people.map(p => [p.id,p.name,p.phone,p.email,p.website||"",p.address,p.group,p.yearsNZ||"",p.profession||"",p.nationality||"",p.status||"",p.children||"",p.childrenNames||"",p.wife||"",p.spouseType||"",p.notes,fmtDate(p.dateAdded),p.dateModified?fmtDate(p.dateModified):"",p.photoData||""].map(q).join(","));
   const csv = [head.map(q).join(","),...rows].join("\n");
+  const withPhotos = people.filter(p => p.photoData).length;
+  const counts = people.length + " people, " + withPhotos + " with photos";
   if (window.Android && window.Android.saveFile) {
     window.Android.saveFile("My contact.csv", "text/csv", csv);
+    toast("Exported " + counts);
     return;
   }
   const blob = new Blob([csv], { type: "text/csv" });
@@ -253,7 +328,7 @@ function exportCSV() {
   a.download = "My contact.csv";
   a.click();
   URL.revokeObjectURL(a.href);
-  toast("Saved as My contact.csv — share it to Google Drive");
+  toast("Saved My contact.csv (" + counts + ") — share it to Google Drive");
 }
 
 function parseCSV(text) {
@@ -288,7 +363,15 @@ function importCSV(file) {
           iYears = col("years"), iProf = col("profession"), iStatus = col("status"),
           iChild = col("children"), iWifeA = col("spouse"), iWifeB = col("wife"), iWife = iWifeA >= 0 ? iWifeA : iWifeB, iSpT = col("spouse type"), iNat = col("nationality"),
           iChildN = col("children names");
-    let maxId = people.reduce((m,p) => Math.max(m,p.id), 0), added = 0, updated = 0;
+    let maxId = people.reduce((m,p) => Math.max(m,p.id), 0), added = 0, updated = 0, badPhotos = 0;
+    const photosBefore = people.filter(p => p.photoData).length;
+    // Only accept intact image data. Excel/Sheets cut long cells off at 32,767 characters.
+    const takePhoto = v => {
+      v = (v || "").trim();
+      if (!v) return "";
+      if (/^data:image\/(jpeg|png|webp);base64,/.test(v) && v.length !== 32767) return v;
+      badPhotos++; return "";
+    };
     for (const r of rows.slice(1)) {
       const name = (r[iName]||"").trim();
       if (!name) continue;
@@ -300,7 +383,7 @@ function importCSV(file) {
         fill("email", iEmail>=0 ? r[iEmail] : "");
         fill("address", iAddr>=0 ? r[iAddr] : "");
         fill("website", iWeb>=0 ? r[iWeb] : "");
-        fill("photoData", iPD>=0 ? r[iPD] : "");
+        fill("photoData", takePhoto(iPD>=0 ? r[iPD] : ""));
         fill("yearsNZ", iYears>=0 ? r[iYears] : "");
         fill("profession", iProf>=0 ? r[iProf] : "");
         fill("status", iStatus>=0 ? r[iStatus] : "");
@@ -321,7 +404,7 @@ function importCSV(file) {
         website: iWeb>=0 ? r[iWeb]||"" : "",
         group: iGroup>=0 && GROUPS.some(g=>g.name===(r[iGroup]||"").trim()) ? r[iGroup].trim() : "Church",
         photo: iPhoto>=0 && !/^\(photo/.test(r[iPhoto]||"") ? r[iPhoto]||"" : "",
-        photoData: iPD>=0 ? r[iPD]||"" : "",
+        photoData: takePhoto(iPD>=0 ? r[iPD] : ""),
         yearsNZ: iYears>=0 ? r[iYears]||"" : "",
         profession: iProf>=0 ? r[iProf]||"" : "",
         status: iStatus>=0 ? r[iStatus]||"" : "",
@@ -335,11 +418,18 @@ function importCSV(file) {
       });
       added++;
     }
-    save(); render();
+    const saved = save();
+    render();
+    const photosGained = people.filter(p => p.photoData).length - photosBefore;
     const bits = [];
     if (added) bits.push("added " + added);
-    if (updated) bits.push("updated " + updated + " (photos/details filled in)");
-    toast(bits.length ? "Import: " + bits.join(", ") : "Nothing new to import");
+    if (updated) bits.push("updated " + updated);
+    let msg = bits.length ? "Import: " + bits.join(", ") : "Nothing new to import";
+    msg += " · " + photosGained + " photo" + (photosGained === 1 ? "" : "s") + " brought in";
+    if (iPD < 0) msg += " · this file has no photo column (made by an older version)";
+    if (badPhotos) msg += " · " + badPhotos + " photo" + (badPhotos === 1 ? "" : "s") + " damaged — use the original CSV, not one re-saved in Excel/Sheets";
+    if (!saved) msg = "Imported but NOT saved — this device is out of storage. " + msg;
+    toast(msg);
   };
   reader.readAsText(file);
 }
@@ -959,7 +1049,7 @@ window.appBack = function () {
   return false;
 };
 
-render();
+init().then(() => render());
 </script>
 </body>
 </html>
