@@ -32,6 +32,9 @@ jobs:
           mkdir -p android/app/src/main/assets
           cp index.html android/app/src/main/assets/index.html
 
+      - name: Point Gradle at the runner's Android SDK
+        run: echo "sdk.dir=${ANDROID_SDK_ROOT:-$ANDROID_HOME}" > android/local.properties
+
       - name: Build debug APK
         shell: bash
         working-directory: android

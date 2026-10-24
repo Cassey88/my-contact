@@ -12,6 +12,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Message;
 import android.provider.MediaStore;
+import android.provider.Settings;
 import android.webkit.GeolocationPermissions;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
@@ -27,7 +28,11 @@ import androidx.core.content.FileProvider;
 import androidx.webkit.WebViewAssetLoader;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
 public class MainActivity extends Activity {
@@ -227,7 +232,70 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void toastUi(final String msg) {
+        runOnUiThread(() -> Toast.makeText(MainActivity.this, msg, Toast.LENGTH_LONG).show());
+    }
+
+    // Downloads the new APK from the GitHub release, then hands it to Android's installer
+    private void downloadAndInstall(String urlStr) {
+        try {
+            File dir = new File(getCacheDir(), "photos");
+            dir.mkdirs();
+            File apk = new File(dir, "update.apk");
+            HttpURLConnection c = (HttpURLConnection) new URL(urlStr).openConnection();
+            c.setInstanceFollowRedirects(true);
+            c.setConnectTimeout(20000);
+            c.setReadTimeout(60000);
+            int code = c.getResponseCode();
+            if (code != 200) {
+                throw new Exception("server said " + code);
+            }
+            try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(apk)) {
+                byte[] buf = new byte[65536];
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    out.write(buf, 0, n);
+                }
+            }
+            final Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", apk);
+            runOnUiThread(() -> {
+                Intent i = new Intent(Intent.ACTION_VIEW);
+                i.setDataAndType(uri, "application/vnd.android.package-archive");
+                i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+            });
+        } catch (Exception e) {
+            toastUi("Update failed: " + e.getMessage());
+        }
+    }
+
     private class Bridge {
+        @JavascriptInterface
+        public String getVersion() {
+            try {
+                return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            } catch (Exception e) {
+                return "0";
+            }
+        }
+
+        @JavascriptInterface
+        public void installUpdate(final String url) {
+            runOnUiThread(() -> {
+                if (!getPackageManager().canRequestPackageInstalls()) {
+                    Toast.makeText(MainActivity.this,
+                            "Turn on Allow from this source, then come back and tap Update again",
+                            Toast.LENGTH_LONG).show();
+                    Intent i = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                            Uri.parse("package:" + getPackageName()));
+                    startActivity(i);
+                    return;
+                }
+                Toast.makeText(MainActivity.this, "Downloading update...", Toast.LENGTH_SHORT).show();
+                new Thread(() -> downloadAndInstall(url)).start();
+            });
+        }
+
         @JavascriptInterface
         public void saveFile(String name, String mime, String content) {
             try {
